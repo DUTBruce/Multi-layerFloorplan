@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/BStarTree.cpp" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/CMakeLists.txt" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Floorplan/BeamSearcher.hpp" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Floorplan/CMakeLists.txt" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Floorplan/Config.hpp" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Floorplan/Data.hpp" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Floorplan/FloorplanPacker.hpp" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Floorplan/Instance.hpp" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/Floorplan/RandomLocalSearcher.hpp" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/Floorplan/Utils.hpp" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../研究生修养/floorplanning/floorplanning平面布图规划/B tree.cpp" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/../../研究生修养/floorplanning/floorplanning平面布图规划/floorplanning平面布图规划/B tree.cpp" charset="GBK" />
+    <file url="file://F:/本科毕设/floorplanning平面布图规划/B tree.cpp" charset="GBK" />
+    <file url="PROJECT" charset="GBK" />
+  </component>
+</project>
