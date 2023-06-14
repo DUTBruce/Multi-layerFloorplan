@@ -67,7 +67,7 @@ int main()  //(double alpha, string blockpath, string netpath, string output_fil
 //    return 0;
 
     string path = "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\";
-    string instance = "ICCAD2023_floorplanning_case4";
+    string instance = "ICCAD2023_floorplanning_case2";
     unsigned int random_seed = 1;
     float time_limit = 10;
     Config cfg(path, instance, random_seed ,time_limit);

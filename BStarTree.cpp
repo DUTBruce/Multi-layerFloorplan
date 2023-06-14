@@ -13,18 +13,19 @@ class BStarTree      //一个tree即一个floorplan，记录了包含哪些模�
 public:
     vector<Block> *blocks;  //对Solver中blocks的指针（引用会出错）
     int root;           //根节点编号
-    int root_x=0, root_y=0; //根节点坐标（默认是最贴着左下角(0,0)，后续也可以调整）
+    COORD_TYPE root_x=0, root_y=0; //根节点坐标（默认是最贴着左下角(0,0)，后续也可以调整）
     int tree_layer;     //当前tree表示第几层
     int offset_x, offset_y;
     int tree_b_num;          //当前树的block数量
+    int pack_num;           //pack操作的块数量（校对和树block数量一致）
     Contour contour;    //到当前遍历结点的等高线，根据遍历顺序迭代更新（每次pack前需要reset）
-    int width_, height_;       //布图轮廓的宽和高
+    COORD_TYPE width_, height_;       //布图轮廓的宽和高
     BStarTree(vector<Block>* b, int layer):blocks(b)
     {
         //blocks = b;//引用类型成员变量必须在构造函数初始化列表中进行初始化，而不能在构造函数体内进行赋值操作。
         tree_layer = layer;
     }
-    void Perturb()      //o(h) 对当前树实行扰动
+    /*void Perturb()      //o(h) 对当前树实行扰动
     {
         int perturb_move_size = 3;  //扰动操作的数量
         int random = rand() % perturb_move_size;
@@ -58,7 +59,7 @@ public:
                 break;
             }
         }
-    }
+    }*/
     void RotateBlock(int id)
     {
         (*blocks)[id].rotate();
@@ -69,10 +70,15 @@ public:
     {
         //delete, 为了尽可能保持结点相对结构，逐层向下替换删除，\
         左右结点选一个替代父结点，递归向下直至叶子结点（左右结点均为空）
+        bool is_debug = false;
         Block& del_node = (*blocks)[from];
+        assert(del_node.layer == tree_layer);
+        if(is_debug)
+            cout<<"1"<<endl;
         while(del_node.left!=-1 || del_node.right!=-1)  //！！原出错语句为while(del_node.left!=-1 || del_node.left!=-1)
         {
-            //cout<<"1"<<endl;
+            if(is_debug)
+                cout<<"1.1"<<endl;
             if(del_node.left!=-1 && del_node.right!=-1)
             {
                 if(rand()%2)
@@ -87,6 +93,8 @@ public:
             else
                 SwapBlock(from, del_node.right);
         }
+        if(is_debug)
+            cout<<"2"<<endl;
         if(del_node.is_from_left)
         {
             (*blocks)[del_node.parent].left = -1;
@@ -95,10 +103,13 @@ public:
         {
             (*blocks)[del_node.parent].right = -1;
         }
+        tree_b_num--;
     }
     void InsertBlock(int from, int to)
     {
-        //insert，插入到目标结点to的左结点或右节点，尽可能保持结构
+        //insert，（随机）插入到目标结点to的左结点或右节点，尽可能保持结构
+        assert((*blocks)[to].layer == tree_layer);
+        (*blocks)[from].layer = tree_layer; //跨层插入时更正原block的layer为新所在树的layer
         if(rand()%2)    //左
         {
             (*blocks)[from].is_from_left = true;
@@ -117,6 +128,7 @@ public:
             if((*blocks)[from].right != -1)
                 (*blocks)[(*blocks)[from].right].parent = from;
         }
+        tree_b_num++;
     }
     void MoveBlock(int from, int to) //o(h)
     {
@@ -225,7 +237,7 @@ public:
         else if(id_2 == root)
             root = id_1;
     }
-    const int Area()
+    const COORD_TYPE Area()
     {
         /*long long area = (long long)width_ * height_;
         assert(area< 2000000000);*/
@@ -261,19 +273,28 @@ public:
 
     void Pack()
     {
+        bool is_debug = false;
+        if(is_debug)
+            cout << "pack tree_layer: " << tree_layer << ", blocks pack order: " ;
         contour.reset();
         assert((*blocks).size()!=0);
-        //pack_num = 0;
+        pack_num = 0;
         Pack(root);
+        if(is_debug)
+            cout << endl;
         width_ = contour.max_x();
         height_ = contour.max_y();
+        assert(pack_num == tree_b_num);
     }
     void Pack(int b)    //根据树结构放置模块，无参数时默认从根节点开始
     {
-        //pack_num++;
+        bool is_debug = false;
+        if(is_debug)
+            cout << b << ", " ;
+        pack_num++;
         //1.放置模块（即更新xy坐标）
         Block& block =  (*blocks)[b];
-        cout << "block_id: " << b << ", block.layer: " << block.layer << ", tree_layer: " << tree_layer << endl;
+        //cout << "block_id: " << b << ", block.layer: " << block.layer << ", tree_layer: " << tree_layer << endl;
         assert(block.layer == tree_layer);
         if(b == root)
         {

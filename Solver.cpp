@@ -14,18 +14,19 @@ class Solver    //即Floorplan算法框架
 public:
     vector<Block> blocks_cur, blocks_pre, blocks_best;  //当前操作的模块，保存的上一次的模块（作为恢复的副本），以及最好解的模块
     vector<Net> nets;
-    vector<int> blocks_tree_number;     //blocks_cur[i]所在的树
+    //vector<int> blocks_tree_number;     //blocks_cur[i]所在的树，可以直接存在block中，已用blocks_cur[block_id].layer代替
     int layyer_size;    //几层的floorplanning
     unordered_map<string, int> blocks_name_id;   //块的名字到编号（0到b_num-1）的映射
     Config _cfg;
     int b_num;          //总共的block数量
     vector<BStarTree> cur_tree, pre_tree, best_tree;    //vector中layyer_size个tree的block数量总和等于b_num
     double alpha;  //代价函数的面积系数，面积所占比重
-    double average_area, average_wire_length;   //初始化时确定的平均面积和线长，便于计算多目标Cost() = area/avg + wirelength/avg;
+    double initial_average_area, initial_average_wire_length;   //初始化时确定的平均面积和线长，便于计算多目标Cost() = area/avg + wirelength/avg;
     double cost_pre, cost_cur, best_cost;
-    int total_block_area;
+    COORD_TYPE total_block_area;
     double dead_sapce_rate;
     /*算法评测信息*/
+    int initial_num_perturbs;
     int iter=0, best_iter=0;
     int reject_time=0;
     int accept_inferior_time=0;
@@ -35,18 +36,20 @@ public:
     Solver(Config &cfg)
     {
         _cfg = cfg;
-        start_ms = _cfg.start_ms;
+        _cfg.start_ms = start_ms = clock();
+        //start_ms = _cfg.start_ms;
         layyer_size = _cfg.layyer_max;
+        alpha = _cfg.alpha;
         //best_tree.resize(layyer_size);
     }
     void run()
     {
         srand(_cfg.random_seed);
-        solve(_cfg.alpha, _cfg.block_file, _cfg.net_file, _cfg.output_file);
+        solve(_cfg.block_file, _cfg.net_file, _cfg.output_file);
     }
-    void solve(double alpha, string blockpath, string netpath, string output_file)
+    void solve(string blockpath, string netpath, string output_file)
     {
-        Initialization(alpha, blockpath, netpath);
+        Initialization(blockpath, netpath);
         //ConvSA();
         end_ms = clock();
 //        OutputBlocks(std::cout, blocks_cur);
@@ -217,6 +220,10 @@ public:
 //    }
     void Perturb() //o(h) 在解层面对所有树实行扰动，对相应影响的树进行布局Pack（实际操作实现的在模块层面进行扰动）
     {
+        bool is_debug = false;
+        if(is_debug)
+            cout << "begin perturb" << endl;
+
         /*在树层面进行扰动
         int random = rand() % (2*layyer_size - 1);  //扰动的动作，从0到layyersize-1对应一棵树的扰动，其余动作对应树间扰动
         //1. 动作i在0-layyersize-1中，扰动树i
@@ -238,7 +245,8 @@ public:
             case 0: //旋转模块 o(1)
             {
                 int block_id = rand()%b_num;
-                //cout<<"rotate "<<block_id<<endl;
+                if(is_debug)
+                    cout<<"rotate "<<block_id<<endl;
                 RotateBlock(block_id);
                 break;
             }
@@ -248,7 +256,8 @@ public:
                 int to = rand()%b_num;
                 while(to == from)
                     to = rand()%b_num;
-                //cout<<"move "<<from<<" to "<<to<<endl;
+                if(is_debug)
+                    cout<<"move "<<from<<" to "<<to<<endl;
                 MoveBlocks(from, to);
                 break;
             }
@@ -258,34 +267,49 @@ public:
                 int id_2 = rand()%b_num;
                 while(id_2 == id_1)
                     id_2 = rand()%b_num;
-                //cout<<"swap "<<id_1<<" and "<<id_2<<endl;
+                if(is_debug)
+                    cout<<"swap "<<id_1<<" and "<<id_2<<endl;
                 SwapBlocks(id_1, id_2);
                 break;
             }
         }
+
+        if(is_debug)
+            cout << "complete perturb" << endl;
     }
     void RotateBlock(int block_id)
     {
-        cur_tree[blocks_tree_number[block_id]].RotateBlock(block_id);
-        cur_tree[blocks_tree_number[block_id]].Pack();
+        cur_tree[blocks_cur[block_id].layer].RotateBlock(block_id);
+        cur_tree[blocks_cur[block_id].layer].Pack();
     }
     void MoveBlocks(int from, int to)
     {
-        cur_tree[blocks_tree_number[from]].DeleteBlock(from);
-        cur_tree[blocks_tree_number[to]].InsertBlock(from, to);
-        cur_tree[blocks_tree_number[from]].Pack();
-        if(blocks_tree_number[from] != blocks_tree_number[to])
-            cur_tree[blocks_tree_number[to]].Pack();
+        //cout << "begin delete" << endl;
+        cur_tree[blocks_cur[from].layer].DeleteBlock(from);
+        //cout << "begin insert" << endl;
+        cur_tree[blocks_cur[to].layer].InsertBlock(from, to);
+        cur_tree[blocks_cur[from].layer].Pack();
+        if(blocks_cur[from].layer != blocks_cur[to].layer)
+            cur_tree[blocks_cur[to].layer].Pack();
     }
     void SwapBlocks(int id_1, int id_2)  //o(1)
     {
+        bool is_debug = false;
+        if(id_1 == 3 && id_2 == 2)
+        {
+            //is_debug = true;
+        }
         Block& block_1 = blocks_cur[id_1];      //记得引用！不然是临时变量，修改完了没用！
         Block& block_2 = blocks_cur[id_2];
+        int root_1 = cur_tree[block_1.layer].root;
+        int root_2 = cur_tree[block_2.layer].root;
         swap(block_1.left, block_2.left);
         swap(block_1.right, block_2.right);
         swap(block_1.parent, block_2.parent);
         swap(block_1.is_from_left, block_2.is_from_left);
-        //两节点相邻时，更正错误信息
+        swap(block_1.layer, block_2.layer);
+        //特殊情况处理
+        //1. 两节点相邻时，更正错误信息
         if(block_1.left == id_1)
         {
             block_1.left = id_2;
@@ -304,7 +328,7 @@ public:
             else
                 block_2.right = id_1;
         }
-        //更新父节点和子节点指向信息
+        //2. 更新父节点和子节点指向信息
         if(block_1.parent != -1)
         {
             if(block_1.is_from_left)
@@ -327,18 +351,36 @@ public:
             blocks_cur[block_2.left].parent = id_2;
         if(block_2.right != -1)
             blocks_cur[block_2.right].parent = id_2;
-//        if(id_1 == root)
-//            root = id_2;
-//        else if(id_2 == root)
-//            root = id_1;
+        //3. 如果为根节点则更新相应tree的root
+        if(is_debug) {
+            cout<< "root_1: " << root_1 << ", root_2: " << root_2 << endl;
+            cout << "id_1: " << id_1 << ", cur_tree[block_1.layer].root:" << cur_tree[block_1.layer].root << endl;
+            cout << "id_2: " << id_2 << ", cur_tree[block_2.layer].root:" << cur_tree[block_2.layer].root << endl;
+        }
+        //bug在于下面这俩if判断会相互抵消，又回到了原来，所以需要提前存下root或者用else分类讨论
+        if(id_1 == root_1)
+            cur_tree[block_2.layer].root = id_2;
+        if(id_2 == root_2)
+            cur_tree[block_1.layer].root = id_1;
+
+
+        if(is_debug) {
+            cout << "id_1: " << id_1 << ", cur_tree[block_1.layer].root:" << cur_tree[block_1.layer].root << endl;
+            cout << "id_2: " << id_2 << ", cur_tree[block_2.layer].root:" << cur_tree[block_2.layer].root << endl;
+            OutputBlocks(cout, blocks_cur);
+            OutputTrees(cout, cur_tree);
+        }
     }
     void Pack()
     {
         for(int it = 0; it < layyer_size; it++)
             cur_tree[it].Pack();
     }
-    void Initialization(double alpha, string blockpath, string netpath)       //初始化树结构和平均线长平均面积等信息
+    void Initialization(string blockpath, string netpath)       //初始化树结构和平均线长平均面积等信息
     {
+        bool is_debug = false;
+
+        //1. 读取并初始化为layyersize个完全二叉树
         //blocks_cur.resize(_cfg.layyer_max, Block()); 为什么我会这么写，感觉有问题
         ReadFromFile(blockpath, netpath);
         /*cur_tree.b_num = 6;
@@ -350,26 +392,26 @@ public:
             total_block_area += b.area();
         }
         cout<<"total_block_area: "<<total_block_area<<endl;
-
         Initial_blocks();
         Initial_trees();
         //OutputBlocks(std::cout, blocks_cur);  //pack前，坐标还都是(0,0)
         Pack();
         blocks_best = blocks_pre = blocks_cur;
         best_tree = pre_tree = cur_tree;
-//        OutputBlocks(std::cout, blocks_cur);  //pack后，坐标在放置的位置上
-//        OutputTrees(std::cout, cur_tree);
+        if(is_debug)
+        {
+            OutputBlocks(std::cout, blocks_cur);  //pack后，坐标在放置的位置上
+            OutputTrees(std::cout, cur_tree);
+        }
 
-        return;
 
-        this->alpha = alpha;
-        int initial_area = TotalArea(cur_tree);
+        COORD_TYPE initial_area = TotalArea(cur_tree);
         double initial_wirelength = TotalWireLength(blocks_cur);
         double initial_best_cost = 1; //随机初始化过程的最好代价 alpha * cur_area / initial_area + (1 - alpha) *  cur_wirelength/ initial_wirelength
         long long total_area = 0;
         double total_wirelength = 0;
-        int initial_num_perturbs = b_num * b_num;  //随机初始化的次数（单目标的话选取其中最好的解，多目标时不方便量化，不一定是最好的解）
-        int cur_area;
+        initial_num_perturbs = b_num * b_num;  //随机初始化的次数（单目标的话选取其中最好的解，多目标时不方便量化，不一定是最好的解）
+        COORD_TYPE cur_area;
         double cur_wirelength;
         double cur_cost;
         for(int i=0; i<initial_num_perturbs; i++)
@@ -387,18 +429,20 @@ public:
             }
             total_area += cur_area;
             total_wirelength += cur_wirelength;
-            OutputBlocks(std::cout, blocks_cur);
+            if(is_debug){
+                OutputBlocks(std::cout, blocks_cur);
+            }
         }
 //        cout<<"total_area: "<<total_area<<endl;
 //        cout<<"total_wirelength: "<<total_wirelength<<endl;
-        average_area = (double)total_area / initial_num_perturbs;
-        average_wire_length = (double)total_wirelength / initial_num_perturbs;
+        initial_average_area = (double)total_area / initial_num_perturbs;
+        initial_average_wire_length = (double)total_wirelength / initial_num_perturbs;
         cout<<"initial_area: " << initial_area <<endl;
         cout<<"initial_wirelength: " << initial_wirelength <<endl;
-        cout<<"average_area: "<<average_area<<endl;
-        cout<<"average_wire_length: "<<average_wire_length<<endl;
+        cout<<"initial_average_area: "<<initial_average_area<<endl;
+        cout << "initial_average_wire_length: " << initial_average_wire_length << endl;
         cout<<"initial best area: "<< TotalArea(best_tree)<<endl;
-        cout<<"initial best wirelength"<<TotalWireLength(blocks_best)<<endl;
+        cout<<"initial best wirelength: "<<TotalWireLength(blocks_best)<<endl;
         cout<<"last perturb area: " << cur_area<<endl;
         cout<<"last perturb wirelength: " << cur_wirelength<<endl;
         cout<<"initial_best_cost: "<<initial_best_cost<<endl;
@@ -544,9 +588,9 @@ public:
                 {
                     cerr << "block_type read error: " << block_type << endl;
                 }
-                int x0, y0, x1, y1;
+                COORD_TYPE x0, y0, x1, y1;
                 char dummy; // ignore parameter
-                int dum;
+                COORD_TYPE dum;
                 if(block_type=="hardrectilinear") //读取硬模块
                 {
                     //读取" 4 (x0, y0) (%d, %d) (x1, y1) (%d, %d)"
@@ -579,8 +623,8 @@ public:
                 fin >> pins_num;
                 if(is_debug)
                     cout << "pins_num:" << pins_num << endl;
-                vector<pair<int,int>> pins_coor_thislayyer;    //模块在该层的引脚坐标
-                int x_pin, y_pin;
+                vector<pair<COORD_TYPE,COORD_TYPE>> pins_coor_thislayyer;    //模块在该层的引脚坐标
+                COORD_TYPE x_pin, y_pin;
                 for(int pi = 0; pi < pins_num; pi++)
                 {
                     fin >> dummy >> x_pin >> dummy >> y_pin >> dummy;
@@ -680,9 +724,9 @@ public:
             cin>>name;
         }
     }
-    int BlocksArea()
+    COORD_TYPE BlocksArea()
     {
-        int blocks_area = 0;
+        COORD_TYPE blocks_area = 0;
         for(Block b : blocks_cur)
             blocks_area += b.area();
         return blocks_area;
@@ -731,9 +775,13 @@ public:
             out<<"layer: "<<i<<" ,width: "<<t[i].width_<<" ,height: "<<t[i].height_<<" ,area: "<<t[i].Area()<<endl;
         }
     }
-    int TotalArea(vector<BStarTree>& _tree)
+    double FillingRate(vector<BStarTree>& _tree)
     {
-        int total_area = 0;
+
+    }
+    COORD_TYPE TotalArea(vector<BStarTree>& _tree)
+    {
+        COORD_TYPE total_area = 0;
         for(int it = 0; it < layyer_size; it++)
             total_area += _tree[it].Area();
         return total_area;
@@ -750,9 +798,9 @@ public:
             {
                 int block_id = net.connected_blocks[i];
                 int pin_id = net.connected_pins[i];
-                pair<int, int> pin_coor = blocks_cur[block_id].get_pin_coor(pin_id);   //获得引脚坐标
-                int pin_x = pin_coor.first;
-                int pin_y = pin_coor.second;
+                pair<COORD_TYPE, COORD_TYPE> pin_coor = blocks_cur[block_id].get_pin_coor(pin_id);   //获得引脚坐标
+                COORD_TYPE pin_x = pin_coor.first;
+                COORD_TYPE pin_y = pin_coor.second;
 
                 int layyer = blocks_cur[block_id].layer;      //当前block在第几层（0层或1层）
 
@@ -780,9 +828,9 @@ public:
             {
                 int block_id = net.connected_blocks[i];
                 int pin_id = net.connected_pins[i];
-                pair<int, int> pin_coor = _blocks[block_id].get_pin_coor(pin_id);   //获得引脚坐标
-                int pin_x = pin_coor.first;
-                int pin_y = pin_coor.second;
+                pair<COORD_TYPE, COORD_TYPE> pin_coor = _blocks[block_id].get_pin_coor(pin_id);   //获得引脚坐标
+                COORD_TYPE pin_x = pin_coor.first;
+                COORD_TYPE pin_y = pin_coor.second;
 
                 int layer = _blocks[block_id].layer;      //当前block在第几层（0层或1层）
 
@@ -810,10 +858,10 @@ public:
     {
         if(alpha == 1)
         {
-            return TotalArea(_tree) / average_area;
+            return TotalArea(_tree) / initial_average_area;
         }
         else
-            return alpha * TotalArea(_tree) / average_area + (1 - alpha) * TotalWireLength(_blocks) / average_wire_length;
+            return alpha * TotalArea(_tree) / initial_average_area + (1 - alpha) * TotalWireLength(_blocks) / initial_average_wire_length;
     }
     double Time()
     {
@@ -821,7 +869,11 @@ public:
     }
     void Output(string output_file)
     {
-        cout<<"dead_sapce_rate: "<<dead_sapce_rate<<endl;
+        cout << endl << _cfg.instance <<"instance completed" << endl;
+        cout<<"random seed: " << _cfg.random_seed << endl;
+        cout <<"best wirelength: " << TotalWireLength(blocks_best) << endl;
+        //fout<<"dead_sapce_rate: "<<dead_sapce_rate<<endl;
+        cout<<"initial_num_perturbs: "<<initial_num_perturbs<<endl;
         cout<<"iter: "<<iter<<endl<<"best_iter: "<<best_iter<<endl<<"best_cost: "<<best_cost<<endl\
             <<"reject_time: "<<reject_time<<endl<<"accept_inferior_time: "<<accept_inferior_time<<endl\
             <<"update_best_time: "<<update_best_time<<endl<<"time cost: "<<Time()<<endl<<endl;
@@ -833,7 +885,10 @@ public:
         }
         OutputBlocks(fout, blocks_best);
         OutputTrees(fout, best_tree);
-        fout<<"dead_sapce_rate: "<<dead_sapce_rate<<endl;
+        fout<<"random seed: " << _cfg.random_seed << endl;
+        fout <<"best wirelength: " << TotalWireLength(blocks_best) << endl;
+        //fout<<"dead_sapce_rate: "<<dead_sapce_rate<<endl;
+        fout<<"initial_num_perturbs: "<<initial_num_perturbs<<endl;
         fout<<"iter: "<<iter<<endl\
             <<"best_iter: "<<best_iter<<endl\
             <<"best_cost: "<<best_cost<<endl\

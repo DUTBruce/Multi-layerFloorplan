@@ -26,13 +26,15 @@
 #include<cmath>
 #include<string>
 
+#define COORD_TYPE long long int    //坐标类型
+#define COORD_TYPE_MAX LONG_LONG_MAX
 
 using namespace std;
 class Config
 {
 public:
     int layyer_max = 2;     //共有几层Floorplan
-    double alpha = 0;       //面积占目标函数的比值，0-1
+    double alpha = 0.1;       //面积占目标函数的比值，0-1
     string path; //= "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\";
     string instance; //= "ICCAD2023_floorplanning_case2";
     string block_file, net_file, output_file;

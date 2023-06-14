@@ -9,26 +9,26 @@ class Contour   //
 {
 public:
 
-    list<pair<int,int>> points;   //等高线的点为左闭右开区间
-    //int max_x = 0, max_y = 0;       //轮廓的最右和最高，即包围的最小矩形框
+    list<pair<COORD_TYPE,COORD_TYPE>> points;   //等高线的点为左闭右开区间
+    //COORD_TYPE max_x = 0, max_y = 0;       //轮廓的最右和最高，即包围的最小矩形框
     void reset()
     {
         points.clear();
     }
-    int max_x()
+    COORD_TYPE max_x()
     {
         if(points.size()==0)
             return 0;
         else
             return points.back().first;
     }
-    int max_y()
+    COORD_TYPE max_y()
     {
         return find_max_y_between(0, max_x());
     }
-    int find_max_y_between(int x1, int x2)  // o(c) ≈ o(n ^ 1/2)
+    COORD_TYPE find_max_y_between(COORD_TYPE x1, COORD_TYPE x2)  // o(c) ≈ o(n ^ 1/2)
     {
-        int max_y = 0;
+        COORD_TYPE max_y = 0;
         auto iter = points.begin();
         while(iter->first <= x1 && iter != points.end()) //找到最后一个<=x1的点
             iter++;
@@ -43,7 +43,7 @@ public:
         }
         return max_y;
     }
-    void Update(int x1, int x2, int y)  //将x1--x2的等高线更新为高度y  o(c) ≈ o(n ^ 1/2)
+    void Update(COORD_TYPE x1, COORD_TYPE x2, COORD_TYPE y)  //将x1--x2的等高线更新为高度y  o(c) ≈ o(n ^ 1/2)
     {
         /*if(x2 > max_x)
             max_x = x2;
@@ -59,7 +59,7 @@ public:
         while(iter->first < x1 && iter != points.end()) //找到第一个>=x1的点
             iter++;
         iter--;
-        int last_y0 = iter->second;
+        COORD_TYPE last_y0 = iter->second;
         iter++;
         while(iter->first < x2 && iter != points.end())
         {
