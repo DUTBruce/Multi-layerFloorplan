@@ -35,8 +35,8 @@ cc_C109815,78078,0,0,270,7854,5445,42765030,18,-1,24,1,
 cc_C109816,117414,0,0,0,5412,7854,42505848,4,-1,14,1,
 Wirelength: 534394
 layer(tree) info:
-layer: 0 ,width: 131406 ,height: 16500 ,area: 2168199000
-layer: 1 ,width: 0 ,height: 0 ,area: 0
+layer: 0 ,width: 131406 ,height: 16500 ,area: 2168199000, filling_rate: 0.635434
+layer: 1 ,width: 0 ,height: 0 ,area: 0, filling_rate: 1
 random seed: 1
 best wirelength: 534394
 initial_num_perturbs: 1156
@@ -46,4 +46,4 @@ best_cost: 0.264637
 reject_time: 1004
 accept_inferior_time: 1133
 update_best_time: 59
-time cost: 1.517
+time cost: 0.132

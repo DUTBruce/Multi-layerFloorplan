@@ -50,7 +50,7 @@ public:
             random_seed(random_seed), path(path), instance(instance), time_limit(time_limit){
         block_file = path + instance + ".blocks";
         net_file = path + instance + ".nets";
-        output_file = path + instance + ".output";
+        output_file = path + instance + "_seed=" + to_string(random_seed) + ".output";
     }
 };
 #endif

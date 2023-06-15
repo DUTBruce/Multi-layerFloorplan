@@ -784,7 +784,8 @@ public:
         out<<"layer(tree) info:"<<endl;
         for(int i=0; i<layyer_size; i++)
         {
-            out<<"layer: "<<i<<" ,width: "<<t[i].width_<<" ,height: "<<t[i].height_<<" ,area: "<<t[i].Area()<<endl;
+            out<<"layer: "<<i<<" ,width: "<<t[i].width_<<" ,height: "<<t[i].height_<<" ,area: "<<t[i].Area()
+            << ", filling_rate: " << t[i].FillingRate() << endl;
         }
     }
     double FillingRate(vector<BStarTree>& _tree)

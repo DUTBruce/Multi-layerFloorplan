@@ -67,12 +67,14 @@ int main()  //(double alpha, string blockpath, string netpath, string output_fil
 //    return 0;
 
     string path = "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\";
-    string instance = "ICCAD2023_floorplanning_case2";
-    unsigned int random_seed = 1;
-    float time_limit = 10;
-    Config cfg(path, instance, random_seed ,time_limit);
-    Solver s(cfg);
-    s.run();
+    string instance = "ICCAD2023_floorplanning_case4";
+    float time_limit = 100;
+    for(int random_seed = 1; random_seed <= 10; random_seed++)
+    {
+        Config cfg(path, instance, random_seed ,time_limit);
+        Solver s(cfg);
+        s.run();
+    }
 
 //    /*tree结构和操作测试*/
 //    BStarTree tree;

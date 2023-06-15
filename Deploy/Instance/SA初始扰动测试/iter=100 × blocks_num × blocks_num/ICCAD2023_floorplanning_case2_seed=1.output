@@ -7,8 +7,8 @@ cc_C2795,0,0,0,180,11352,8679,98524008,-1,1,-1,0,
 cc_C2796,0,31317,0,270,8679,11352,98524008,-1,-1,0,0,
 Wirelength: 103025
 layer(tree) info:
-layer: 0 ,width: 20196 ,height: 42669 ,area: 861743124
-layer: 1 ,width: 0 ,height: 0 ,area: 0
+layer: 0 ,width: 20196 ,height: 42669 ,area: 861743124, filling_rate: 0.681811
+layer: 1 ,width: 0 ,height: 0 ,area: 0, filling_rate: 1
 random seed: 1
 best wirelength: 103025
 initial_num_perturbs: 36
@@ -18,4 +18,4 @@ best_cost: 0.632783
 reject_time: 1504
 accept_inferior_time: 1010
 update_best_time: 2
-time cost: 0.04
+time cost: 0.067

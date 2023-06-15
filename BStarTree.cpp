@@ -15,11 +15,11 @@ public:
     int root;           //根节点编号
     COORD_TYPE root_x=0, root_y=0; //根节点坐标（默认是最贴着左下角(0,0)，后续也可以调整）
     int tree_layer;     //当前tree表示第几层
-    int offset_x, offset_y;
     int tree_b_num;          //当前树的block数量
     int pack_num;           //pack操作的块数量（校对和树block数量一致）
     Contour contour;    //到当前遍历结点的等高线，根据遍历顺序迭代更新（每次pack前需要reset）
     COORD_TYPE width_, height_;       //布图轮廓的宽和高
+    COORD_TYPE blocks_area;     //当前树（布图）内所有blocks的面积和
     BStarTree(vector<Block>* b, int layer):blocks(b)
     {
         //blocks = b;//引用类型成员变量必须在构造函数初始化列表中进行初始化，而不能在构造函数体内进行赋值操作。
@@ -250,6 +250,14 @@ public:
         assert(area< 2000000000);*/
         return width_ * height_;
     }
+    const COORD_TYPE BlocksArea()
+    {
+        return blocks_area;
+    }
+    const double FillingRate()
+    {
+        return tree_b_num == 0 ? 1: (double)blocks_area / Area();
+    }
     /*未使用，原计算单树的半周长线长
     double WireLength()    //半周长 max|xi - xj| + max|yi - yj|   o(net)
     {
@@ -286,6 +294,7 @@ public:
         contour.reset();
         assert((*blocks).size()!=0);
         pack_num = 0;
+        blocks_area = 0;
         if(root == -1)  //树中无结点
         {
             width_ = 0;
@@ -309,6 +318,7 @@ public:
         pack_num++;
         //1.放置模块（即更新xy坐标）
         Block& block =  (*blocks)[b];
+        blocks_area += block.area();
         if(block.layer != tree_layer){
             cerr << "block_id: " << b << ", block.layer: " << block.layer << ", tree_layer: " << tree_layer << endl;
             exit(3);
