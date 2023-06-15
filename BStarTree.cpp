@@ -66,7 +66,7 @@ public:
 //        blocks[id].is_rotated = !blocks[id].is_rotated;
 //        swap(blocks[id].width, blocks[id].height);
     }
-    void DeleteBlock(int from)
+    void DeleteBlock(int from)  //替换删除，如果删除根节点会在SwapBlock中更改对应root，但如果树中只有根节点需要设置root=-1
     {
         //delete, 为了尽可能保持结点相对结构，逐层向下替换删除，\
         左右结点选一个替代父结点，递归向下直至叶子结点（左右结点均为空）
@@ -75,6 +75,13 @@ public:
         assert(del_node.layer == tree_layer);
         if(is_debug)
             cout<<"1"<<endl;
+        if(tree_b_num == 1)     //如果树中只有根节点需要设置root=-1
+        {
+            assert(del_node.left==-1 && del_node.right==-1 && from==root); //此时树中只有from一个结点
+            tree_b_num --;
+            root = -1;
+            return;
+        }
         while(del_node.left!=-1 || del_node.right!=-1)  //！！原出错语句为while(del_node.left!=-1 || del_node.left!=-1)
         {
             if(is_debug)
@@ -279,22 +286,33 @@ public:
         contour.reset();
         assert((*blocks).size()!=0);
         pack_num = 0;
-        Pack(root);
+        if(root == -1)  //树中无结点
+        {
+            width_ = 0;
+            height_ = 0;
+        }
+        else
+        {
+            Pack(root);
+            width_ = contour.max_x();
+            height_ = contour.max_y();
+        }
         if(is_debug)
             cout << endl;
-        width_ = contour.max_x();
-        height_ = contour.max_y();
         assert(pack_num == tree_b_num);
     }
     void Pack(int b)    //根据树结构放置模块，无参数时默认从根节点开始
     {
         bool is_debug = false;
         if(is_debug)
-            cout << b << ", " ;
+            cout << b << ",";
         pack_num++;
         //1.放置模块（即更新xy坐标）
         Block& block =  (*blocks)[b];
-        //cout << "block_id: " << b << ", block.layer: " << block.layer << ", tree_layer: " << tree_layer << endl;
+        if(block.layer != tree_layer){
+            cerr << "block_id: " << b << ", block.layer: " << block.layer << ", tree_layer: " << tree_layer << endl;
+            exit(3);
+        }
         assert(block.layer == tree_layer);
         if(b == root)
         {

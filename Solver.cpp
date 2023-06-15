@@ -50,82 +50,89 @@ public:
     void solve(string blockpath, string netpath, string output_file)
     {
         Initialization(blockpath, netpath);
-        //ConvSA();
+        OutputBlocks(std::cout, blocks_best);
+        OutputTrees(std::cout,best_tree);
+        SA();
+        cout << "SA is over" << endl;
         end_ms = clock();
 //        OutputBlocks(std::cout, blocks_cur);
 //        OutputTrees(std::cout,cur_tree);
-        OutputBlocks(std::cout, blocks_best);   //bug已修正，blocks_best未用pack后的blocks_cur赋值
+        OutputBlocks(std::cout, blocks_best);
         OutputTrees(std::cout,best_tree);
+        cout << "OutputTrees is over" << endl;
         Output(output_file);
     }
 
-//    void SA()
-//    {
-//        /*cur_tree.Initialization();
-//        cur_tree.Pack();
-//        best_tree = pre_tree = cur_tree;
-//        best_cost = cost_pre = Cost();*/
-//        double initial_p = 0.99;
-//        /*double t = ( - best_cost / log(initial_p) );
-//        cout<<"t: "<<t<<endl<<endl;
-//        double t_min = t / 1e3;*/
-//        double t = 1e3;
-//        double t_min = 1e-4;
-//        double lamda = 0.85;         //退火系数，迭代128*100(num_iterations)次
-//        //int num_iterations = cur_tree.b_num * cur_tree.b_num;
-//        int num_iterations = b_num * b_num * 30;   //每个温度下的迭代次数
-//        double deta_cost;
-//        /*iter = best_iter = 0;
-//        reject_time = 0;
-//        accept_inferior_time = 0;
-//        update_best_time=0;*/
-//        while(t > t_min)
-//        {
-//
-//            for(int i=0; i<num_iterations && (double)(clock()-start_ms)/CLOCKS_PER_SEC < _cfg.time_limit; i++)
-//            {
-//                Perturb();
-//                cur_tree.Pack();
-//                cost_cur = Cost();
-//                deta_cost = cost_cur - cost_pre;
-//                //cout<<"deta_cost: "<<deta_cost<<endl;
-//                //cout<<"cost_pre: "<<cost_pre<<", best_cost: "<<best_cost<<endl;
-//                if(deta_cost <= 0)               //为什么是<=0，和<0有何区别：因为=0的时候接受劣解概率公式结果为1，会一直接受新解
-//                {
-//                    //cout<<"cost_cur: "<<cost_cur<<", best_cost: "<<best_cost<<endl;
-//                    if(cost_cur < best_cost)    //更新最优解
-//                    {
-//                        best_cost = cost_cur;
-//                        best_tree = cur_tree;
-//                        //cout<<"best_cost: "<<best_cost<<endl;
-//                        best_iter = iter;
-//                        update_best_time++;
-//                    }
-//                    cost_pre = cost_cur;
-//                    pre_tree = cur_tree;
-//                }
-//                else if(exp( - deta_cost / t) > rand()%10000/10000.0)   //满足模拟退火接受劣解概率
-//                {
-//                    cost_pre = cost_cur;
-//                    pre_tree = cur_tree;
-//                    accept_inferior_time++;
-//                    /*if(iter % 100 == 0)
-//                    {
-//                        cout<<"accept, "<<"deta_cost: "<<deta_cost<<" t: "<<t<<" exp( - deta_cost / t): "<<exp( - deta_cost / t)<<endl;
-//                    }*/
-//                }
-//                else
-//                {
-//                    cur_tree = pre_tree;            //不接受新解，从 S(i+1) 回滚到 S(i)
-//                    reject_time++;
-//                    //cout<<"reject in iter: "<<iter<<endl;
-//                }
-//                iter++;
-//            }
-//            t = t * lamda;
-//        }
-//        dead_sapce_rate = (float)best_tree.Area() / total_block_area - 1;
-//    }
+    void SA()
+    {
+        /*cur_tree.Initialization();
+        cur_tree.Pack();
+        best_tree = pre_tree = cur_tree;
+        best_cost = cost_pre = Cost();*/
+        /*double initial_p = 0.99;
+        double t = ( - best_cost / log(initial_p) );
+        cout<<"t: "<<t<<endl<<endl;
+        double t_min = t / 1e3;*/
+        double t = 1e3;
+        double t_min = 1e-4;
+        double lamda = 0.85;         //退火系数，迭代 100 * num_iterations 次
+        int num_iterations = b_num * b_num ; //b_num * b_num * 30;   //每个温度下的迭代次数
+        double deta_cost;
+        iter = best_iter = 0;
+        reject_time = 0;
+        accept_inferior_time = 0;
+        update_best_time=0;
+        while(t > t_min)
+        {
+
+            for(int i=0; i<num_iterations && (double)(clock()-start_ms)/CLOCKS_PER_SEC < _cfg.time_limit; i++)
+            {
+                Perturb();
+                //Pack();  Perturb()内自动pack
+                cost_cur = Cost(cur_tree, blocks_cur);
+                deta_cost = cost_cur - cost_pre;
+                //cout<<"deta_cost: "<<deta_cost<<endl;
+                //cout<<"cost_pre: "<<cost_pre<<", best_cost: "<<best_cost<<endl;
+                if(deta_cost <= 0)               //为什么是<=0，和<0有何区别：因为=0的时候接受劣解概率公式结果为1，会一直接受新解
+                {
+                    //cout<<"cost_cur: "<<cost_cur<<", best_cost: "<<best_cost<<endl;
+                    if(cost_cur < best_cost)    //更新最优解
+                    {
+                        best_cost = cost_cur;
+                        best_tree = cur_tree;
+                        blocks_best = blocks_cur;
+                        //cout<<"best_cost: "<<best_cost<<endl;
+                        best_iter = iter;
+                        update_best_time++;
+                    }
+                    cost_pre = cost_cur;
+                    pre_tree = cur_tree;
+                    blocks_pre = blocks_cur;
+                }
+                else if(exp( - deta_cost / t) > rand()%10000/10000.0)   //满足模拟退火接受劣解概率
+                {
+                    cost_pre = cost_cur;
+                    pre_tree = cur_tree;
+                    blocks_pre = blocks_cur;
+                    accept_inferior_time++;
+                    /*if(iter % 100 == 0)
+                    {
+                        cout<<"accept, "<<"deta_cost: "<<deta_cost<<" t: "<<t<<" exp( - deta_cost / t): "<<exp( - deta_cost / t)<<endl;
+                    }*/
+                }
+                else
+                {
+                    cur_tree = pre_tree;            //不接受新解，从 S(i+1) 回滚到 S(i)
+                    blocks_cur = blocks_pre;
+                    reject_time++;
+                    //cout<<"reject in iter: "<<iter<<endl;
+                }
+                iter++;
+            }
+            t = t * lamda;
+        }
+        //dead_sapce_rate = (float)best_tree.Area() / total_block_area - 1;
+    }
 //    void ConvSA()
 //    {
 //        double conv_rate = 1;    //定义收敛率，拒绝率>=收敛率时搜索完毕
@@ -219,6 +226,8 @@ public:
 //
 //    }
     void Perturb() //o(h) 在解层面对所有树实行扰动，对相应影响的树进行布局Pack（实际操作实现的在模块层面进行扰动）
+    //6.15新增，Perturb后自动pack扰动的树
+    //todo: 移动模块时可能将树移为空，树为空时不会再移入模块。解决方法：增加把模块移到对应树根节点之前的操作，也就是新增to的选择
     {
         bool is_debug = false;
         if(is_debug)
@@ -273,7 +282,6 @@ public:
                 break;
             }
         }
-
         if(is_debug)
             cout << "complete perturb" << endl;
     }
@@ -285,11 +293,13 @@ public:
     void MoveBlocks(int from, int to)
     {
         //cout << "begin delete" << endl;
-        cur_tree[blocks_cur[from].layer].DeleteBlock(from);
+        int layer_from = blocks_cur[from].layer;    //预先存一下所在层，不然后续更改后blocks_cur[from].layer会变为to的layer
+        int layer_to = blocks_cur[to].layer;
+        cur_tree[layer_from].DeleteBlock(from);
         //cout << "begin insert" << endl;
-        cur_tree[blocks_cur[to].layer].InsertBlock(from, to);
-        cur_tree[blocks_cur[from].layer].Pack();
-        if(blocks_cur[from].layer != blocks_cur[to].layer)
+        cur_tree[layer_to].InsertBlock(from, to);
+        cur_tree[layer_from].Pack();
+        if(layer_from != layer_to)
             cur_tree[blocks_cur[to].layer].Pack();
     }
     void SwapBlocks(int id_1, int id_2)  //o(1)
@@ -362,7 +372,9 @@ public:
             cur_tree[block_2.layer].root = id_2;
         if(id_2 == root_2)
             cur_tree[block_1.layer].root = id_1;
-
+        cur_tree[blocks_cur[id_1].layer].Pack();
+        if(blocks_cur[id_1].layer != blocks_cur[id_2].layer)
+            cur_tree[blocks_cur[id_2].layer].Pack();
 
         if(is_debug) {
             cout << "id_1: " << id_1 << ", cur_tree[block_1.layer].root:" << cur_tree[block_1.layer].root << endl;
@@ -396,7 +408,7 @@ public:
         Initial_trees();
         //OutputBlocks(std::cout, blocks_cur);  //pack前，坐标还都是(0,0)
         Pack();
-        blocks_best = blocks_pre = blocks_cur;
+        blocks_best = blocks_pre = blocks_cur;  //bug已修正，之前blocks_best未用pack后的blocks_cur赋值
         best_tree = pre_tree = cur_tree;
         if(is_debug)
         {
@@ -417,7 +429,7 @@ public:
         for(int i=0; i<initial_num_perturbs; i++)
         {
             Perturb();
-            Pack();
+            //Pack(); Perturb()内自动pack
             cur_area = TotalArea(cur_tree);
             cur_wirelength = TotalWireLength(blocks_cur);
             cur_cost = alpha * cur_area / initial_area + (1 - alpha) *  cur_wirelength/ initial_wirelength;
@@ -819,6 +831,7 @@ public:
     }*/
     double TotalWireLength(vector<Block>& _blocks)  //半周长 max|xi - xj| + max|yi - yj|   o(net)
     {
+        bool is_debug = false;
         double sum_half_perimeter = 0;
         for(auto net: nets)
         {
@@ -831,6 +844,8 @@ public:
                 pair<COORD_TYPE, COORD_TYPE> pin_coor = _blocks[block_id].get_pin_coor(pin_id);   //获得引脚坐标
                 COORD_TYPE pin_x = pin_coor.first;
                 COORD_TYPE pin_y = pin_coor.second;
+                if(is_debug)
+                    cout << "pin " << i << ". x: " << pin_x << ", y: " << pin_y << endl;
 
                 int layer = _blocks[block_id].layer;      //当前block在第几层（0层或1层）
 
@@ -850,6 +865,8 @@ public:
                 sum_half_perimeter += (max(x_max[0] - x_min[1], 0.0) + max(y_max[0] - y_min[1], 0.0));
                 sum_half_perimeter += (max(x_max[1] - x_min[0], 0.0) + max(y_max[1] - y_min[0], 0.0));
             }
+            if(is_debug)
+                cout << "sum_half_perimeter: " << sum_half_perimeter << endl;
         }
         return sum_half_perimeter;
     }
