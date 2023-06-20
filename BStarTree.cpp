@@ -137,6 +137,35 @@ public:
         }
         tree_b_num++;
     }
+    void InsertRoot(int from)   //插入到根节点之前，原根节点（树）随机变为左孩子（左子树）/右孩子（右子树）
+    {
+        assert((*blocks)[to].layer == tree_layer);
+        (*blocks)[from].layer = tree_layer;
+        (*blocks)[from].parent = -1;
+        (*blocks)[from].is_from_left = false;
+        if(rand()%2)    //左
+        {
+            if(root != -1)
+            {
+                (*blocks)[root].parent = from;
+                (*blocks)[root].is_from_left = true;
+            }
+            (*blocks)[from].left = root;
+            (*blocks)[from].right = -1;
+        }
+        else            //右
+        {
+            if(root != -1)
+            {
+                (*blocks)[root].parent = from;
+                (*blocks)[root].is_from_left = false;
+            }
+            (*blocks)[from].left = -1;
+            (*blocks)[from].right = root;
+        }
+        root = from;
+        tree_b_num++;
+    }
     void MoveBlock(int from, int to) //o(h)
     {
         //delete, 为了尽可能保持结点相对结构，逐层向下替换删除，\

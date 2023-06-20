@@ -22,6 +22,8 @@ public:
     vector<BStarTree> cur_tree, pre_tree, best_tree;    //vector中layyer_size个tree的block数量总和等于b_num
     double alpha;  //代价函数的面积系数，面积所占比重
     double initial_average_area, initial_average_wire_length;   //初始化时确定的平均面积和线长，便于计算多目标Cost() = area/avg + wirelength/avg;
+    double initial_wirelength, initial_time;
+    int initial_iter;
     double cost_pre, cost_cur, best_cost;
     COORD_TYPE total_block_area;
     double dead_sapce_rate;
@@ -76,7 +78,7 @@ public:
         double t = 1e3;
         double t_min = 1e-4;
         double lamda = 0.85;         //退火系数，迭代 100 * num_iterations 次
-        int num_iterations = b_num * b_num ; //b_num * b_num * 30;   //每个温度下的迭代次数
+        int num_iterations = b_num * b_num * 30; //b_num * b_num * 30;   //每个温度下的迭代次数
         double deta_cost;
         iter = best_iter = 0;
         reject_time = 0;
@@ -227,7 +229,7 @@ public:
 //    }
     void Perturb() //o(h) 在解层面对所有树实行扰动，对相应影响的树进行布局Pack（实际操作实现的在模块层面进行扰动）
     //6.15新增，Perturb后自动pack扰动的树
-    //todo: 移动模块时可能将树移为空，树为空时不会再移入模块。解决方法：增加把模块移到对应树根节点之前的操作，也就是新增to的选择
+    //6.20新增已解决问题: 移动模块时可能将树移为空，树为空时不会再移入模块。已解决：增加把模块移到对应树根节点之前的操作，也就是新增to的选择
     {
         bool is_debug = false;
         if(is_debug)
@@ -262,7 +264,7 @@ public:
             case 1: //移动模块（删除并插入） o(h)
             {
                 int from = rand()%b_num;
-                int to = rand()%b_num;
+                int to = rand() % (b_num+layyer_size);      //模块移动的去向：除了1.所有模块后面，还有2.每层布局的根节点之前（成为新的根结点）
                 while(to == from)
                     to = rand()%b_num;
                 if(is_debug)
@@ -294,13 +296,22 @@ public:
     {
         //cout << "begin delete" << endl;
         int layer_from = blocks_cur[from].layer;    //预先存一下所在层，不然后续更改后blocks_cur[from].layer会变为to的layer
-        int layer_to = blocks_cur[to].layer;
         cur_tree[layer_from].DeleteBlock(from);
-        //cout << "begin insert" << endl;
-        cur_tree[layer_to].InsertBlock(from, to);
+        int layer_to;
+        if(to < b_num)  //1.正常移动到模块to后面
+        {
+            layer_to = blocks_cur[to].layer;
+            //cout << "begin insert" << endl;
+            cur_tree[layer_to].InsertBlock(from, to);
+        }
+        else    //2. 模块移动到布局 to - b_num (0到layyer_size-1) 的根节点之前
+        {
+            layer_to = to - b_num;
+            cur_tree[layer_to].InsertRoot(from);
+        }
         cur_tree[layer_from].Pack();
         if(layer_from != layer_to)
-            cur_tree[blocks_cur[to].layer].Pack();
+            cur_tree[layer_to].Pack();
     }
     void SwapBlocks(int id_1, int id_2)  //o(1)
     {
@@ -418,7 +429,7 @@ public:
 
 
         COORD_TYPE initial_area = TotalArea(cur_tree);
-        double initial_wirelength = TotalWireLength(blocks_cur);
+        initial_wirelength = TotalWireLength(blocks_cur);
         double initial_best_cost = 1; //随机初始化过程的最好代价 alpha * cur_area / initial_area + (1 - alpha) *  cur_wirelength/ initial_wirelength
         long long total_area = 0;
         double total_wirelength = 0;
@@ -426,7 +437,7 @@ public:
         COORD_TYPE cur_area;
         double cur_wirelength;
         double cur_cost;
-        for(int i=0; i<initial_num_perturbs; i++)
+        for(initial_iter=0; initial_iter < initial_num_perturbs; initial_iter++)
         {
             Perturb();
             //Pack(); Perturb()内自动pack
@@ -445,6 +456,7 @@ public:
                 OutputBlocks(std::cout, blocks_cur);
             }
         }
+        initial_time = double(clock() - start_ms) / CLOCKS_PER_SEC;
 //        cout<<"total_area: "<<total_area<<endl;
 //        cout<<"total_wirelength: "<<total_wirelength<<endl;
         initial_average_area = (double)total_area / initial_num_perturbs;
@@ -913,7 +925,63 @@ public:
             <<"reject_time: "<<reject_time<<endl\
             <<"accept_inferior_time: "<<accept_inferior_time<<endl\
             <<"update_best_time: "<<update_best_time<<endl\
-            <<"time cost: "<<Time()<<endl;
+            <<"initial_wirelength: " << initial_wirelength<<endl
+            <<"initial_iter: " << initial_iter<<endl
+            <<"initial_time: "<<initial_time<<endl
+            <<"total time cost: "<<Time()<<endl;
         fout.close();
+    }
+    void record_log(string log_file)
+    {
+        ofstream fout(log_file, ios::app);
+        if(!fout)
+        {
+            cout<<"output error in file: "<<log_file<<endl;
+            exit(-1);
+        }
+        fout.seekp(0, ios::end);
+        if (fout.tellp() <= 0) {
+            fout << "Instance,"
+                    "RandSeed,"
+                    "FinalWireLength,"
+                    "Time,"
+                    "Iteration,"
+                    "BestIter,"
+                    "BestCost,"
+                    "reject_times,"
+                    "accept_inferior_times,"
+                    "update_best_times,"
+                    "InitialWireLength,"
+                    "InitialTime,"
+                    "InitialIteration," ;
+            for(int i=0; i<layyer_size; i++)
+            {
+                fout << "layer_" + to_string(i) + "_width,"
+                    << "layer_" + to_string(i) + "_height,"
+                    << "layer_" + to_string(i) + "_fillrate,";
+                //<< best_tree[i].width_ << ","
+            }
+            fout << endl;
+        }
+        fout << _cfg.instance << ","
+            << _cfg.random_seed << ","
+            << TotalWireLength(blocks_best) << ","
+            << Time() << ","
+            << iter << ","
+            << best_iter << ","
+            << best_cost << ","
+            << reject_time << ","
+            << accept_inferior_time << ","
+            << update_best_time << ","
+            << initial_wirelength << ","
+            << initial_time << ","
+            << initial_iter << "," ;
+        for(int i=0; i<layyer_size; i++)
+        {
+            fout << best_tree[i].width_ << ","
+                 << best_tree[i].height_ << ","
+                 << best_tree[i].FillingRate()  << ",";
+        }
+        fout << endl;
     }
 };
