@@ -1,0 +1,24 @@
+name,x,y,layer,rotated_angle,width,height,area,left,right,parent,is_from_left,
+cc_C2791,8679,0,0,0,11319,8580,97117020,-1,-1,4,1,
+cc_C2792,0,11352,0,180,11319,8580,97117020,5,-1,4,0,
+cc_C2793,0,0,1,0,11616,8448,98131968,3,-1,-1,0,
+cc_C2794,11616,0,1,270,8448,11616,98131968,-1,-1,2,1,
+cc_C2795,0,0,0,270,8679,11352,98524008,0,1,-1,0,
+cc_C2796,11319,8580,0,180,11352,8679,98524008,-1,-1,1,1,
+Wirelength: 54487
+layer(tree) info:
+layer: 0 ,width: 22671 ,height: 19932 ,area: 451878372, filling_rate: 0.865901
+layer: 1 ,width: 20064 ,height: 11616 ,area: 233063424, filling_rate: 0.842105
+random seed: 6
+best wirelength: 54487
+initial_num_perturbs: 36
+iter: 108000
+best_iter: 78939
+best_cost: 0.361049
+reject_time: 44992
+accept_inferior_time: 30480
+update_best_time: 13
+initial_wirelength: 163778
+initial_iter: 36
+initial_time: 0.002
+total time cost: 0.328
