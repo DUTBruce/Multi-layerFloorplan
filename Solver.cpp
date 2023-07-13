@@ -87,7 +87,7 @@ public:
         double t = 1e3;
         double t_min = 1e-4;
         double lamda = 0.85;         //退火系数，迭代 100 * num_iterations 次
-        int num_iterations = b_num * b_num * 30; //b_num * b_num * 30;   //每个温度下的迭代次数
+        int num_iterations = b_num * b_num * 30;// * b_num * 30; //b_num * b_num * 30;   //每个温度下的迭代次数
         double deta_cost;
         iter = best_iter = 0;
         reject_time = 0;
