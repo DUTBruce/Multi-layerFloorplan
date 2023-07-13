@@ -24,6 +24,7 @@ public:
 
     int pins_num;   //该模块的引脚数，各层引脚数一样， pins_num = pins_coor[i].size()
     vector<vector<pair<COORD_TYPE,COORD_TYPE>>> pins_coor;    //pins_coor[i][j]表示第i层引脚j的相对坐标（相对模块坐标），编号 j 从 0 到 pins_num-1
+    COORD_TYPE exceed_outline_area;
 
     Block(int layersize = 1, string s = "null")
     {
@@ -52,15 +53,15 @@ public:
     {
         rotated_angle = (rotated_angle+90) % 360;
     }
-    COORD_TYPE get_width()
+    const COORD_TYPE get_width()
     {
         return rotated_angle%180==0? width[layer]: height[layer];
     }
-    COORD_TYPE get_height()
+    const COORD_TYPE get_height()
     {
         return rotated_angle%180==0? height[layer]: width[layer];
     }
-    COORD_TYPE area()
+    const COORD_TYPE area()
     {
         assert(width[layer] < COORD_TYPE_MAX / height[layer]);   //保证不越界
         return width[layer] * height[layer];

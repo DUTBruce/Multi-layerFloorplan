@@ -17,6 +17,7 @@
 #include<iostream>
 #include<fstream>
 #include<vector>
+#include <set>
 #include<list>
 #include<stack>
 #include<unordered_map>
@@ -26,6 +27,7 @@
 #include<cmath>
 #include<string>
 
+#define FixedOutline true       //是否为固定轮廓
 #define COORD_TYPE long long int    //坐标类型
 #define COORD_TYPE_MAX LONG_LONG_MAX
 
@@ -34,7 +36,8 @@ class Config
 {
 public:
     int layyer_max = 2;     //共有几层Floorplan
-    double alpha = 0.1;       //面积占目标函数的比值，0-1
+    double alpha = 0;       //代价函数的面积系数（面积/线长所占比重），0-1
+    double gamma = 1;       //轮廓约束系数，任意指定值，没有固定轮廓约束时gamma=0
     string path; //= "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\";
     string instance; //= "ICCAD2023_floorplanning_case2";
     string block_file, net_file, output_file;

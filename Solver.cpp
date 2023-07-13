@@ -12,24 +12,30 @@
 class Solver    //即Floorplan算法框架
 {
 public:
-    vector<Block> blocks_cur, blocks_pre, blocks_best;  //当前操作的模块，保存的上一次的模块（作为恢复的副本），以及最好解的模块
+    //数据结构
+    //vector<Block> blocks_cur, blocks_pre, blocks_best;  //当前操作的模块，保存的上一次的模块（作为恢复的副本），以及最好解的模块
+    BStarTree cur_tree, pre_tree, best_tree;    //每个tree内部包括layer_size层，block数量总和等于b_num
+    vector<Block> initial_blocks;
     vector<Net> nets;
     //vector<int> blocks_tree_number;     //blocks_cur[i]所在的树，可以直接存在block中，已用blocks_cur[block_id].layer代替
-    int layyer_size;    //几层的floorplanning
+    int layer_size;    //几层的floorplanning
     unordered_map<string, int> blocks_name_id;   //块的名字到编号（0到b_num-1）的映射
     Config _cfg;
     int b_num;          //总共的block数量
-    vector<BStarTree> cur_tree, pre_tree, best_tree;    //vector中layyer_size个tree的block数量总和等于b_num
-    double alpha;  //代价函数的面积系数，面积所占比重
-    double initial_average_area, initial_average_wire_length;   //初始化时确定的平均面积和线长，便于计算多目标Cost() = area/avg + wirelength/avg;
-    double initial_wirelength, initial_time;
+
+    //参数信息
+    COORD_TYPE outline_width = 23000, outline_height = 19000;    //固定轮廓的宽和高，在读取时赋值，在初始化树时存入树中
+    double alpha, gamma;  //代价函数的面积系数（面积/线长所占比重），轮廓约束系数
+    double initial_average_area, initial_average_wirelength;   //初始化时确定的平均面积和线长，便于计算多目标Cost() = area/avg + wirelength/avg;
+    double initial_average_exceed_outline_area; //初始化时平均的超出轮廓代价，等于超出的轮廓面积（宏观）+超出轮廓的模块面积（细化）
+    double initial_wirelength, initial_time, initial_best_wirelength;
     int initial_iter;
     double cost_pre, cost_cur, best_cost;
     COORD_TYPE total_block_area;
     double dead_sapce_rate;
     /*算法评测信息*/
     int initial_num_perturbs;
-    int iter=0, best_iter=0;
+    int iter=0, best_iter=0, adjustLegalOutline_fail_times=0;
     int reject_time=0;
     int accept_inferior_time=0;
     int update_best_time=0;
@@ -40,9 +46,10 @@ public:
         _cfg = cfg;
         _cfg.start_ms = start_ms = clock();
         //start_ms = _cfg.start_ms;
-        layyer_size = _cfg.layyer_max;
+        layer_size = _cfg.layyer_max;
         alpha = _cfg.alpha;
-        //best_tree.resize(layyer_size);
+        gamma = _cfg.gamma;
+        //best_tree.resize(layer_size);
     }
     void run()
     {
@@ -52,14 +59,15 @@ public:
     void solve(string blockpath, string netpath, string output_file)
     {
         Initialization(blockpath, netpath);
-        OutputBlocks(std::cout, blocks_best);
-        OutputTrees(std::cout,best_tree);
+        OutputBlocks(std::cout, cur_tree.blocks);
+        OutputTrees(std::cout,cur_tree);
+        cout<< "1" << endl;
         SA();
         cout << "SA is over" << endl;
         end_ms = clock();
 //        OutputBlocks(std::cout, blocks_cur);
 //        OutputTrees(std::cout,cur_tree);
-        OutputBlocks(std::cout, blocks_best);
+        OutputBlocks(std::cout, best_tree.blocks);
         OutputTrees(std::cout,best_tree);
         cout << "OutputTrees is over" << endl;
         Output(output_file);
@@ -75,10 +83,11 @@ public:
         double t = ( - best_cost / log(initial_p) );
         cout<<"t: "<<t<<endl<<endl;
         double t_min = t / 1e3;*/
+        best_tree = pre_tree = cur_tree;
         double t = 1e3;
         double t_min = 1e-4;
         double lamda = 0.85;         //退火系数，迭代 100 * num_iterations 次
-        int num_iterations = b_num * b_num * 30; //b_num * b_num * 30;   //每个温度下的迭代次数
+        int num_iterations = b_num * b_num * 30;// * b_num * 30; //b_num * b_num * 30;   //每个温度下的迭代次数
         double deta_cost;
         iter = best_iter = 0;
         reject_time = 0;
@@ -87,35 +96,47 @@ public:
         while(t > t_min)
         {
 
-            for(int i=0; i<num_iterations && (double)(clock()-start_ms)/CLOCKS_PER_SEC < _cfg.time_limit; i++)
+            for(iter=0; iter<num_iterations && (double)(clock()-start_ms)/CLOCKS_PER_SEC < _cfg.time_limit; iter++)
             {
-                Perturb();
-                //Pack();  Perturb()内自动pack
-                cost_cur = Cost(cur_tree, blocks_cur);
-                deta_cost = cost_cur - cost_pre;
+                cur_tree.Perturb();
+                cur_tree.Pack();
+                //OutputBlocks(cout, cur_tree.blocks);
+                cost_cur = Cost(cur_tree);
+                deta_cost = cost_cur - cost_pre ;
                 //cout<<"deta_cost: "<<deta_cost<<endl;
                 //cout<<"cost_pre: "<<cost_pre<<", best_cost: "<<best_cost<<endl;
                 if(deta_cost <= 0)               //为什么是<=0，和<0有何区别：因为=0的时候接受劣解概率公式结果为1，会一直接受新解
                 {
                     //cout<<"cost_cur: "<<cost_cur<<", best_cost: "<<best_cost<<endl;
-                    if(cost_cur < best_cost)    //更新最优解
+                    if(cost_cur < best_cost)    //更新最优解，若为固定轮廓则调整后若满足才更新
                     {
+                        if(FixedOutline == true){
+                            if(AdjustLegalOutline(cur_tree, b_num * b_num) == false)
+                            {
+                                //调整轮廓失败，放弃此次最优解，&并加入禁忌？how？
+                                adjustLegalOutline_fail_times ++;
+                                continue;
+                            }
+                            else
+                            {
+                                cost_cur = Cost(cur_tree);
+                                if(cost_cur >= best_cost)
+                                    continue;
+                            }
+                        }
                         best_cost = cost_cur;
                         best_tree = cur_tree;
-                        blocks_best = blocks_cur;
                         //cout<<"best_cost: "<<best_cost<<endl;
                         best_iter = iter;
                         update_best_time++;
                     }
                     cost_pre = cost_cur;
                     pre_tree = cur_tree;
-                    blocks_pre = blocks_cur;
                 }
                 else if(exp( - deta_cost / t) > rand()%10000/10000.0)   //满足模拟退火接受劣解概率
                 {
                     cost_pre = cost_cur;
                     pre_tree = cur_tree;
-                    blocks_pre = blocks_cur;
                     accept_inferior_time++;
                     /*if(iter % 100 == 0)
                     {
@@ -125,11 +146,9 @@ public:
                 else
                 {
                     cur_tree = pre_tree;            //不接受新解，从 S(i+1) 回滚到 S(i)
-                    blocks_cur = blocks_pre;
                     reject_time++;
                     //cout<<"reject in iter: "<<iter<<endl;
                 }
-                iter++;
             }
             t = t * lamda;
         }
@@ -142,7 +161,7 @@ public:
 //        double total_deta_cost=0, average_deta_cost;
 //        for(int i=0; i<cur_tree.tree_b_num * cur_tree.tree_b_num; i++)
 //        {
-//            cur_tree.Perturb();
+//            cur_tree.PerturbAndPack();
 //            cur_tree.Pack();
 //            cost_cur = Cost();
 //            total_deta_cost += abs(cost_cur - cost_pre);
@@ -173,7 +192,7 @@ public:
 //        {
 //            for(int i=0; i<num_iterations; i++)
 //            {
-//                cur_tree.Perturb();
+//                cur_tree.PerturbAndPack();
 //                cur_tree.Pack();
 //                cost_cur = Cost();
 //                deta_cost = cost_cur - cost_pre;
@@ -227,178 +246,179 @@ public:
 //        dead_sapce_rate = (float)best_tree.Area() / total_block_area - 1;
 //
 //    }
-    void Perturb() //o(h) 在解层面对所有树实行扰动，对相应影响的树进行布局Pack（实际操作实现的在模块层面进行扰动）
-    //6.15新增，Perturb后自动pack扰动的树
-    //6.20新增已解决问题: 移动模块时可能将树移为空，树为空时不会再移入模块。已解决：增加把模块移到对应树根节点之前的操作，也就是新增to的选择
-    {
-        bool is_debug = false;
-        if(is_debug)
-            cout << "begin perturb" << endl;
-
-        /*在树层面进行扰动
-        int random = rand() % (2*layyer_size - 1);  //扰动的动作，从0到layyersize-1对应一棵树的扰动，其余动作对应树间扰动
-        //1. 动作i在0-layyersize-1中，扰动树i
-        if(random < layyer_size || layyer_size == 1)
-        {
-            cur_tree[layyer_size].Perturb();
-        }
-        //2. 剩余2*layyer_size - 1种情况，进行树间扰动：移动模块从一个树到另一个树。2层的时候为1/3概率
-        else
-        {
-
-        }*/
-
-        //模块层面进行扰动
-        int perturb_move_size = 3;  //扰动操作的数量
-        int random = rand() % perturb_move_size;
-        switch(random)
-        {
-            case 0: //旋转模块 o(1)
-            {
-                int block_id = rand()%b_num;
-                if(is_debug)
-                    cout<<"rotate "<<block_id<<endl;
-                RotateBlock(block_id);
-                break;
-            }
-            case 1: //移动模块（删除并插入） o(h)
-            {
-                int from = rand()%b_num;
-                int to = rand() % (b_num+layyer_size);      //模块移动的去向：除了1.所有模块后面，还有2.每层布局的根节点之前（成为新的根结点）
-                while(to == from)
-                    to = rand()%b_num;
-                if(is_debug)
-                    cout<<"move "<<from<<" to "<<to<<endl;
-                MoveBlocks(from, to);
-                break;
-            }
-            case 2: //交换模块（两边同时删除和插入） o(1)
-            {
-                int id_1 = rand()%b_num;
-                int id_2 = rand()%b_num;
-                while(id_2 == id_1)
-                    id_2 = rand()%b_num;
-                if(is_debug)
-                    cout<<"swap "<<id_1<<" and "<<id_2<<endl;
-                SwapBlocks(id_1, id_2);
-                break;
-            }
-        }
-        if(is_debug)
-            cout << "complete perturb" << endl;
-    }
-    void RotateBlock(int block_id)
-    {
-        cur_tree[blocks_cur[block_id].layer].RotateBlock(block_id);
-        cur_tree[blocks_cur[block_id].layer].Pack();
-    }
-    void MoveBlocks(int from, int to)
-    {
-        //cout << "begin delete" << endl;
-        int layer_from = blocks_cur[from].layer;    //预先存一下所在层，不然后续更改后blocks_cur[from].layer会变为to的layer
-        cur_tree[layer_from].DeleteBlock(from);
-        int layer_to;
-        if(to < b_num)  //1.正常移动到模块to后面
-        {
-            layer_to = blocks_cur[to].layer;
-            //cout << "begin insert" << endl;
-            cur_tree[layer_to].InsertBlock(from, to);
-        }
-        else    //2. 模块移动到布局 to - b_num (0到layyer_size-1) 的根节点之前
-        {
-            layer_to = to - b_num;
-            cur_tree[layer_to].InsertRoot(from);
-        }
-        cur_tree[layer_from].Pack();
-        if(layer_from != layer_to)
-            cur_tree[layer_to].Pack();
-    }
-    void SwapBlocks(int id_1, int id_2)  //o(1)
-    {
-        bool is_debug = false;
-        if(id_1 == 3 && id_2 == 2)
-        {
-            //is_debug = true;
-        }
-        Block& block_1 = blocks_cur[id_1];      //记得引用！不然是临时变量，修改完了没用！
-        Block& block_2 = blocks_cur[id_2];
-        int root_1 = cur_tree[block_1.layer].root;
-        int root_2 = cur_tree[block_2.layer].root;
-        swap(block_1.left, block_2.left);
-        swap(block_1.right, block_2.right);
-        swap(block_1.parent, block_2.parent);
-        swap(block_1.is_from_left, block_2.is_from_left);
-        swap(block_1.layer, block_2.layer);
-        //特殊情况处理
-        //1. 两节点相邻时，更正错误信息
-        if(block_1.left == id_1)
-        {
-            block_1.left = id_2;
-            block_2.parent = id_1;
-        }
-        else if(block_1.right == id_1)
-        {
-            block_1.right = id_2;
-            block_2.parent = id_1;
-        }
-        else if(block_1.parent == id_1)
-        {
-            block_1.parent = id_2;
-            if(block_1.is_from_left)
-                block_2.left = id_1;
-            else
-                block_2.right = id_1;
-        }
-        //2. 更新父节点和子节点指向信息
-        if(block_1.parent != -1)
-        {
-            if(block_1.is_from_left)
-                blocks_cur[block_1.parent].left = id_1;
-            else
-                blocks_cur[block_1.parent].right = id_1;
-        }
-        if(block_1.left != -1)
-            blocks_cur[block_1.left].parent = id_1;
-        if(block_1.right != -1)
-            blocks_cur[block_1.right].parent = id_1;
-        if(block_2.parent != -1)
-        {
-            if(block_2.is_from_left)
-                blocks_cur[block_2.parent].left = id_2;
-            else
-                blocks_cur[block_2.parent].right = id_2;
-        }
-        if(block_2.left != -1)
-            blocks_cur[block_2.left].parent = id_2;
-        if(block_2.right != -1)
-            blocks_cur[block_2.right].parent = id_2;
-        //3. 如果为根节点则更新相应tree的root
-        if(is_debug) {
-            cout<< "root_1: " << root_1 << ", root_2: " << root_2 << endl;
-            cout << "id_1: " << id_1 << ", cur_tree[block_1.layer].root:" << cur_tree[block_1.layer].root << endl;
-            cout << "id_2: " << id_2 << ", cur_tree[block_2.layer].root:" << cur_tree[block_2.layer].root << endl;
-        }
-        //bug在于下面这俩if判断会相互抵消，又回到了原来，所以需要提前存下root或者用else分类讨论
-        if(id_1 == root_1)
-            cur_tree[block_2.layer].root = id_2;
-        if(id_2 == root_2)
-            cur_tree[block_1.layer].root = id_1;
-        cur_tree[blocks_cur[id_1].layer].Pack();
-        if(blocks_cur[id_1].layer != blocks_cur[id_2].layer)
-            cur_tree[blocks_cur[id_2].layer].Pack();
-
-        if(is_debug) {
-            cout << "id_1: " << id_1 << ", cur_tree[block_1.layer].root:" << cur_tree[block_1.layer].root << endl;
-            cout << "id_2: " << id_2 << ", cur_tree[block_2.layer].root:" << cur_tree[block_2.layer].root << endl;
-            OutputBlocks(cout, blocks_cur);
-            OutputTrees(cout, cur_tree);
-        }
-    }
-    void Pack()
-    {
-        for(int it = 0; it < layyer_size; it++)
-            cur_tree[it].Pack();
-    }
+//    void PerturbAndPack(vector<BStarTree> &tree, vector<Block> &blocks) //o(h) 在解层面对所有树实行扰动，对相应影响的树进行布局Pack（实际操作实现的在模块层面进行扰动）
+//    //6.15新增，Perturb后自动pack扰动的树
+//    //6.20新增已解决问题: 移动模块时可能将树移为空，树为空时不会再移入模块。已解决：增加把模块移到对应树根节点之前的操作，也就是新增to的选择
+//    {
+//        assert(tree[0].blocks == &blocks);
+//        bool is_debug = false;
+//        if(is_debug)
+//            cout << "begin perturb" << endl;
+//
+//        /*在树层面进行扰动
+//        int random = rand() % (2*layer_size - 1);  //扰动的动作，从0到layyersize-1对应一棵树的扰动，其余动作对应树间扰动
+//        //1. 动作i在0-layyersize-1中，扰动树i
+//        if(random < layer_size || layer_size == 1)
+//        {
+//            cur_tree[layer_size].PerturbAndPack();
+//        }
+//        //2. 剩余2*layer_size - 1种情况，进行树间扰动：移动模块从一个树到另一个树。2层的时候为1/3概率
+//        else
+//        {
+//
+//        }*/
+//
+//        //模块层面进行扰动
+//        int perturb_move_size = 3;  //扰动操作的数量
+//        int random = rand() % perturb_move_size;
+//        switch(random)
+//        {
+//            case 0: //旋转模块 o(1)
+//            {
+//                int block_id = rand()%b_num;
+//                if(is_debug)
+//                    cout<<"rotate "<<block_id<<endl;
+//                RotateBlock(tree, blocks, block_id);
+//                break;
+//            }
+//            case 1: //移动模块（删除并插入） o(h)
+//            {
+//                int from = rand()%b_num;
+//                int to = rand() % (b_num + layer_size);      //模块移动的去向：除了1.所有模块后面，还有2.每层布局的根节点之前（成为新的根结点）
+//                while(to == from)
+//                    to = rand()%b_num;
+//                if(is_debug)
+//                    cout<<"move "<<from<<" to "<<to<<endl;
+//                MoveBlocks(tree, blocks, from, to);
+//                break;
+//            }
+//            case 2: //交换模块（两边同时删除和插入） o(1)
+//            {
+//                int id_1 = rand()%b_num;
+//                int id_2 = rand()%b_num;
+//                while(id_2 == id_1)
+//                    id_2 = rand()%b_num;
+//                if(is_debug)
+//                    cout<<"swap "<<id_1<<" and "<<id_2<<endl;
+//                SwapBlocks(tree, blocks, id_1, id_2);
+//                break;
+//            }
+//        }
+//        if(is_debug)
+//            cout << "complete perturb" << endl;
+//    }
+//    void RotateBlock(vector<BStarTree> &tree, vector<Block> &blocks, int block_id)
+//    {
+//        tree[blocks[block_id].layer].RotateBlock(block_id);
+//        tree[blocks[block_id].layer].Pack();
+//    }
+//    void MoveBlocks(vector<BStarTree> &tree, vector<Block> &blocks, int from, int to)
+//    {
+//        //cout << "begin delete" << endl;
+//        int layer_from = blocks[from].layer;    //预先存一下所在层，不然后续更改后blocks_cur[from].layer会变为to的layer
+//        tree[layer_from].DeleteBlock(from);
+//        int layer_to;
+//        if(to < b_num)  //1.正常移动到模块to后面
+//        {
+//            layer_to = blocks[to].layer;
+//            //cout << "begin insert" << endl;
+//            tree[layer_to].InsertBlock(from, to);
+//        }
+//        else    //2. 模块移动到布局 to - b_num (0到layyer_size-1) 的根节点之前
+//        {
+//            layer_to = to - b_num;
+//            tree[layer_to].InsertRoot(from);
+//        }
+//        tree[layer_from].Pack();
+//        if(layer_from != layer_to)
+//            tree[layer_to].Pack();
+//    }
+//    void SwapBlocks(vector<BStarTree> &tree, vector<Block> &blocks, int id_1, int id_2)  //o(1)
+//    {
+//        bool is_debug = false;
+//        if(id_1 == 3 && id_2 == 2)
+//        {
+//            //is_debug = true;
+//        }
+//        Block& block_1 = blocks[id_1];      //记得引用！不然是临时变量，修改完了没用！
+//        Block& block_2 = blocks[id_2];
+//        int root_1 = tree[block_1.layer].root;
+//        int root_2 = tree[block_2.layer].root;
+//        swap(block_1.left, block_2.left);
+//        swap(block_1.right, block_2.right);
+//        swap(block_1.parent, block_2.parent);
+//        swap(block_1.is_from_left, block_2.is_from_left);
+//        swap(block_1.layer, block_2.layer);
+//        //特殊情况处理
+//        //1. 两节点相邻时，更正错误信息
+//        if(block_1.left == id_1)
+//        {
+//            block_1.left = id_2;
+//            block_2.parent = id_1;
+//        }
+//        else if(block_1.right == id_1)
+//        {
+//            block_1.right = id_2;
+//            block_2.parent = id_1;
+//        }
+//        else if(block_1.parent == id_1)
+//        {
+//            block_1.parent = id_2;
+//            if(block_1.is_from_left)
+//                block_2.left = id_1;
+//            else
+//                block_2.right = id_1;
+//        }
+//        //2. 更新父节点和子节点指向信息
+//        if(block_1.parent != -1)
+//        {
+//            if(block_1.is_from_left)
+//                blocks[block_1.parent].left = id_1;
+//            else
+//                blocks[block_1.parent].right = id_1;
+//        }
+//        if(block_1.left != -1)
+//            blocks[block_1.left].parent = id_1;
+//        if(block_1.right != -1)
+//            blocks[block_1.right].parent = id_1;
+//        if(block_2.parent != -1)
+//        {
+//            if(block_2.is_from_left)
+//                blocks[block_2.parent].left = id_2;
+//            else
+//                blocks[block_2.parent].right = id_2;
+//        }
+//        if(block_2.left != -1)
+//            blocks[block_2.left].parent = id_2;
+//        if(block_2.right != -1)
+//            blocks[block_2.right].parent = id_2;
+//        //3. 如果为根节点则更新相应tree的root
+//        if(is_debug) {
+//            cout<< "root_1: " << root_1 << ", root_2: " << root_2 << endl;
+//            cout << "id_1: " << id_1 << ", cur_tree[block_1.layer].root:" << cur_tree[block_1.layer].root << endl;
+//            cout << "id_2: " << id_2 << ", cur_tree[block_2.layer].root:" << cur_tree[block_2.layer].root << endl;
+//        }
+//        //bug在于下面这俩if判断会相互抵消，又回到了原来，所以需要提前存下root或者用else分类讨论
+//        if(id_1 == root_1)
+//            tree[block_2.layer].root = id_2;
+//        if(id_2 == root_2)
+//            tree[block_1.layer].root = id_1;
+//        tree[blocks[id_1].layer].Pack();
+//        if(blocks[id_1].layer != blocks[id_2].layer)
+//            tree[blocks[id_2].layer].Pack();
+//
+//        if(is_debug) {
+//            cout << "id_1: " << id_1 << ", cur_tree[block_1.layer].root:" << cur_tree[block_1.layer].root << endl;
+//            cout << "id_2: " << id_2 << ", cur_tree[block_2.layer].root:" << cur_tree[block_2.layer].root << endl;
+//            OutputBlocks(cout, cur_tree.blocks);
+//            OutputTrees(cout, cur_tree);
+//        }
+//    }
+//    void Pack()
+//    {
+//        for(int it = 0; it < layer_size; it++)
+//            cur_tree[it].Pack();
+//    }
     void Initialization(string blockpath, string netpath)       //初始化树结构和平均线长平均面积等信息
     {
         bool is_debug = false;
@@ -410,70 +430,95 @@ public:
         cur_tree.blocks_cur = {Block(1,1),Block(2,2),Block(2,1),Block(1,1),Block(1,1),Block(3,2)};
         Net::nets = {{0,1,3}, {2,4,5}, {0,1,2,3,4,5}};*/
         total_block_area = 0;
-        for(auto b: blocks_cur)    //记录所有块总面积
+        for(auto b: initial_blocks)    //记录所有块总面积
         {
             total_block_area += b.area();
         }
         cout<<"total_block_area: "<<total_block_area<<endl;
         Initial_blocks();
+        if(is_debug)
+        {
+            cout << "Initial_blocks() is over" << endl;
+        }
         Initial_trees();
+        if(is_debug)
+        {
+            cout << "Initial_trees() is over" << endl;
+        }
         //OutputBlocks(std::cout, blocks_cur);  //pack前，坐标还都是(0,0)
-        Pack();
-        blocks_best = blocks_pre = blocks_cur;  //bug已修正，之前blocks_best未用pack后的blocks_cur赋值
+        cur_tree.Pack();
+        //blocks_best = blocks_pre = blocks_cur;  //bug已修正，之前blocks_best未用pack后的blocks_cur赋值
         best_tree = pre_tree = cur_tree;
         if(is_debug)
         {
-            OutputBlocks(std::cout, blocks_cur);  //pack后，坐标在放置的位置上
+            OutputBlocks(std::cout, cur_tree.blocks);  //pack后，坐标在放置的位置上
             OutputTrees(std::cout, cur_tree);
         }
 
 
         COORD_TYPE initial_area = TotalArea(cur_tree);
-        initial_wirelength = TotalWireLength(blocks_cur);
-        double initial_best_cost = 1; //随机初始化过程的最好代价 alpha * cur_area / initial_area + (1 - alpha) *  cur_wirelength/ initial_wirelength
+        initial_wirelength = TotalWireLength(cur_tree.blocks);
+        COORD_TYPE initial_exceed_outline_area = TotalExceedOutlineArea(cur_tree) == 0 ? 1 : TotalExceedOutlineArea(cur_tree); //防止除数为0
+        double initial_best_cost = 1 + gamma; //随机初始化过程的最好代价 alpha * cur_area/initial_area + (1-alpha) *  cur_wirelength/initial_wirelength + gamma * cur_exceed_outline_area/initial_exceed_outline_area
         long long total_area = 0;
         double total_wirelength = 0;
+        COORD_TYPE  total_exceed_outline_area = initial_exceed_outline_area;
+
         initial_num_perturbs = b_num * b_num;  //随机初始化的次数（单目标的话选取其中最好的解，多目标时不方便量化，不一定是最好的解）
         COORD_TYPE cur_area;
         double cur_wirelength;
         double cur_cost;
+        COORD_TYPE cur_exceed_outline_area;
         for(initial_iter=0; initial_iter < initial_num_perturbs; initial_iter++)
         {
-            Perturb();
-            //Pack(); Perturb()内自动pack
+            cur_tree.Perturb();
+            cur_tree.Pack();
+            if(is_debug){
+                OutputBlocks(std::cout, cur_tree.blocks);
+                OutputTrees(std::cout, cur_tree);
+            }
             cur_area = TotalArea(cur_tree);
-            cur_wirelength = TotalWireLength(blocks_cur);
-            cur_cost = alpha * cur_area / initial_area + (1 - alpha) *  cur_wirelength/ initial_wirelength;
+            cur_wirelength = TotalWireLength(cur_tree.blocks);
+            cur_exceed_outline_area = TotalExceedOutlineArea(cur_tree);
+            cur_cost = alpha * cur_area/initial_area + (1 - alpha) *  cur_wirelength/initial_wirelength + gamma * cur_exceed_outline_area/initial_exceed_outline_area;
             if(cur_cost < initial_best_cost)
             {
                 initial_best_cost = cur_cost;
-                blocks_best = blocks_cur;
                 best_tree = cur_tree;
             }
             total_area += cur_area;
             total_wirelength += cur_wirelength;
-            if(is_debug){
-                OutputBlocks(std::cout, blocks_cur);
-            }
+            total_exceed_outline_area += cur_exceed_outline_area;
         }
         initial_time = double(clock() - start_ms) / CLOCKS_PER_SEC;
 //        cout<<"total_area: "<<total_area<<endl;
 //        cout<<"total_wirelength: "<<total_wirelength<<endl;
         initial_average_area = (double)total_area / initial_num_perturbs;
-        initial_average_wire_length = (double)total_wirelength / initial_num_perturbs;
+        initial_average_wirelength = (double)total_wirelength / initial_num_perturbs;
+        initial_average_exceed_outline_area = (double)total_exceed_outline_area / (initial_num_perturbs+1);
+        initial_best_wirelength = TotalWireLength(best_tree.blocks);
         cout<<"initial_area: " << initial_area <<endl;
         cout<<"initial_wirelength: " << initial_wirelength <<endl;
-        cout<<"initial_average_area: "<<initial_average_area<<endl;
-        cout << "initial_average_wire_length: " << initial_average_wire_length << endl;
+        cout<<"initial_exceed_outline_area: " << initial_exceed_outline_area <<endl;
+        cout<< "initial_average_area: "<<initial_average_area<<endl;
+        cout << "initial_average_wirelength: " << initial_average_wirelength << endl;
+        cout << "initial_average_exceed_outline_area: " << initial_average_exceed_outline_area <<endl;
         cout<<"initial best area: "<< TotalArea(best_tree)<<endl;
-        cout<<"initial best wirelength: "<<TotalWireLength(blocks_best)<<endl;
+        cout<<"initial_best_wirelength: "<<initial_best_wirelength<<endl;
         cout<<"last perturb area: " << cur_area<<endl;
         cout<<"last perturb wirelength: " << cur_wirelength<<endl;
         cout<<"initial_best_cost: "<<initial_best_cost<<endl;
-        cout<<"last cost: " << cur_cost << endl;
-        blocks_pre = blocks_cur = blocks_best;
+        cout<<"initial last cost: " << cur_cost << endl;
         pre_tree = cur_tree = best_tree;
-        best_cost = cost_pre = Cost(cur_tree, blocks_cur);
+        if(FixedOutline == true){
+            if(AdjustLegalOutline(cur_tree, b_num * b_num * 30) == false)
+            {
+                cerr << "AdjustLegalOutline failed! " << endl;
+                exit(3);
+            }
+            best_tree = pre_tree = cur_tree;
+        }
+        best_cost = cost_pre = Cost(cur_tree);
         cout<<"now best_cost: " << best_cost <<endl;
         cout<<endl;
     }
@@ -481,55 +526,57 @@ public:
     {
         for(int ib=0; ib < b_num; ib++)
         {
-            blocks_cur[ib].parent = blocks_cur[ib].left = blocks_cur[ib].right = -1;
-            blocks_cur[ib].is_from_left = false;
+            initial_blocks[ib].parent = initial_blocks[ib].left = initial_blocks[ib].right = -1;
+            initial_blocks[ib].is_from_left = false;
             /*旋转模块复原*/
-            blocks_cur[ib].rotated_angle = 0;
+            initial_blocks[ib].rotated_angle = 0;
         }
-        blocks_best = blocks_pre = blocks_cur;
+        //blocks_best = blocks_pre = blocks_cur;
     }
     void Initial_trees()
     {
 //        //每个block随机选择放入哪个树（未实现）
-//        for(int it=0; it<layyer_size; it++)
+//        for(int it=0; it<layer_size; it++)
 //        {
 //
 //        }
 //        for(int ib=0; ib < b_num; ib++)
 //        {
-//            int random_tree = rand() % layyer_size;
+//            int random_tree = rand() % layer_size;
 //            blocks_tree_number[ib] = random_tree;
 //            cur_tree[random_tree].
 //        }
 
         //0. 初始化树空间
-        //cur_tree.resize(layyer_size, BStarTree(blocks_cur));
+        //cur_tree.resize(layer_size, BStarTree(blocks_cur));
         //chatgpt告诉我对于具有引用类型成员变量的类，它们不能被默认构造或复制，因此在使用 vector 的 resize() 函数时会导致问题。得按下面的初始化
-        cur_tree.reserve(layyer_size);  // 提前分配足够的空间
-        best_tree.reserve(layyer_size);
-        pre_tree.reserve(layyer_size);
-        for (int i = 0; i < layyer_size; i++) {
-            // 逐个初始化BStarTree对象
-            cur_tree.emplace_back(&blocks_cur, i);
-            best_tree.emplace_back(&blocks_best, i);
-            pre_tree.emplace_back(&blocks_pre, i);
-        }
-        //1. 每个树平均放置若干block节点（以完全二叉树按层生成节点）
-        int ave_tree_blocksnum = b_num / layyer_size;
-        //1.x 特殊情况
-        if(ave_tree_blocksnum == 0) //树比blocks多，前b_num个树每个放一个
-        {
-            cerr << "wait for coding." << endl;
-        }
-        //1.1 正常情况，前layyer_size-1个树平均放
-        for(int it=0; it<layyer_size-1; it++)
-        {
-            cur_tree[it].initial_blocks(it*ave_tree_blocksnum, it+ave_tree_blocksnum);
-        }
-        //1.2 最后一个树放剩下所有blocks
-        cur_tree[layyer_size-1].initial_blocks((layyer_size-1) * ave_tree_blocksnum, b_num);
-
-        best_tree = pre_tree = cur_tree;
+//        cur_tree.reserve(layer_size);  // 提前分配足够的空间
+//        best_tree.reserve(layer_size);
+//        pre_tree.reserve(layer_size);
+//        for (int i = 0; i < layer_size; i++) {
+//            // 逐个初始化BStarTree对象
+//            cur_tree.emplace_back(&blocks_cur, i, outline_width, outline_height);
+//            best_tree.emplace_back(&blocks_best, i, outline_width, outline_height);
+//            pre_tree.emplace_back(&blocks_pre, i, outline_width, outline_height);
+//        }
+        cur_tree = BStarTree(initial_blocks, layer_size, outline_width, outline_height);
+        cur_tree.initial_tree_struct();
+//        //1. 每个树平均放置若干block节点（以完全二叉树按层生成节点）
+//        int ave_tree_blocksnum = b_num / layer_size;
+//        //1.x 特殊情况
+//        if(ave_tree_blocksnum == 0) //树比blocks多，前b_num个树每个放一个
+//        {
+//            cerr << "wait for coding." << endl;
+//        }
+//        //1.1 正常情况，前layyer_size-1个树平均放
+//        for(int it=0; it < layer_size - 1; it++)
+//        {
+//            cur_tree[it].initial_blocks(it*ave_tree_blocksnum, it+ave_tree_blocksnum);
+//        }
+//        //1.2 最后一个树放剩下所有blocks
+//        cur_tree[layer_size - 1].initial_blocks((layer_size - 1) * ave_tree_blocksnum, b_num);
+//
+//        best_tree = pre_tree = cur_tree;
 
         /*测试初始化*/
         //Pack();
@@ -595,15 +642,15 @@ public:
         fin>>str;   //过滤 : 分隔符
         fin>>b_num;
         cout<<"b_num: "<<b_num<<endl;
-        blocks_cur.clear();
-        blocks_cur.resize(b_num);
+        initial_blocks.clear();
+        initial_blocks.resize(b_num);
         //1.1 分layyer_size层读取blocks信息和block上的引脚信息
-        for(int cur_layyer = 0; cur_layyer < layyer_size; cur_layyer++)
+        for(int cur_layyer = 0; cur_layyer < layer_size; cur_layyer++)
         {
             for(int i=0; i<b_num; i++)
             {
                 //1.1.1 读取当前的block长宽信息
-                Block &cur_block = blocks_cur[i];
+                Block &cur_block = initial_blocks[i];
                 fin>>block_name;
                 if(is_debug)
                     cout << "block_name: " << block_name <<endl;
@@ -626,7 +673,7 @@ public:
                     if( cur_layyer==0 )
                     {
                         assert(blocks_name_id.count(block_name)==0);
-                        cur_block = Block(layyer_size, block_name);
+                        cur_block = Block(layer_size, block_name);
                         cur_block.add_layer_info(0, x1 - x0, y1 - y0);
                         blocks_name_id[block_name] = i;
                     }
@@ -661,7 +708,7 @@ public:
                 assert(pins_num == cur_block.pins_coor[cur_layyer].size());
             }
         }
-        assert(blocks_cur.size() == b_num);
+        assert(initial_blocks.size() == b_num);
         fin.close();
         //2. 读取nets信息
         if(netpath.empty())
@@ -704,7 +751,7 @@ public:
                 fin >> pin_id;
                 if(is_debug)
                     cout<<"str: "<<str<<", "<<"block_id: "<<block_id<<", pins_id: "<<pin_id<<endl;
-                assert(pin_id >= 0 && pin_id < blocks_cur[block_id].pins_num);
+                assert(pin_id >= 0 && pin_id < initial_blocks[block_id].pins_num);
                 if(block_id == -1)    //不在考虑范围内的引脚
                 {
                     cerr << str << " pin is not in range" << endl;
@@ -743,7 +790,7 @@ public:
         while(name!="0")
         {
             int id = blocks_name_id[name];
-            Block &b = blocks_cur[id];
+            Block &b = initial_blocks[id];
             cout<<"id:"<<id<<" width:"<<b.width[b.layer]<<" height:"<<b.height[b.layer]<<endl;
             cin>>name;
         }
@@ -751,7 +798,7 @@ public:
     COORD_TYPE BlocksArea()
     {
         COORD_TYPE blocks_area = 0;
-        for(Block b : blocks_cur)
+        for(Block b : initial_blocks)
             blocks_area += b.area();
         return blocks_area;
     }
@@ -770,6 +817,7 @@ public:
            <<"width,"
            <<"height,"
            <<"area,"
+           << "exceed_outline_area,"
            <<"left,"
            <<"right,"
            <<"parent,"
@@ -784,6 +832,7 @@ public:
                 << b[i].get_width() << ","
                 << b[i].get_height() << ","
                 << b[i].area() << ","
+                << b[i].exceed_outline_area << ","
                 << b[i].left << ","
                 << b[i].right << ","
                 << b[i].parent << ","
@@ -791,24 +840,84 @@ public:
                <<endl;
         out << "Wirelength: " << TotalWireLength(b) << endl;
     }
-    void OutputTrees(ostream &out, vector<BStarTree> &t)
+    void OutputTrees(ostream &out, BStarTree &t)
     {
-        out<<"layer(tree) info:"<<endl;
-        for(int i=0; i<layyer_size; i++)
-        {
-            out<<"layer: "<<i<<" ,width: "<<t[i].width_<<" ,height: "<<t[i].height_<<" ,area: "<<t[i].Area()
-            << ", filling_rate: " << t[i].FillingRate() << endl;
-        }
+        t.OutputLayerInfo(out);
     }
     double FillingRate(vector<BStarTree>& _tree)
     {
 
     }
-    COORD_TYPE TotalArea(vector<BStarTree>& _tree)
+    bool AdjustLegalOutline(BStarTree& _tree, int max_adjust_tolerability_iteration)   //perturb后pack的时候有bug，可能是浅复制的原因，已重构代码
+    //调整布图结构，向着超出轮廓面积（代价）更小的解移动，直到 1.成功，代价为0 或 2.失败，连续扰动最大容忍次数也没得到更好解
+    {
+        bool is_debug = false;
+        BStarTree best_tree, cur_tree;  //记录tree信息便于调整和回退
+        best_tree = cur_tree = _tree;
+        COORD_TYPE best_exceed_outline_area =  TotalExceedOutlineArea(_tree);
+        while(best_exceed_outline_area > 0)
+        {
+            if(is_debug)
+                cout<<endl<<"AdjustLegalOutline Perturb and Pack"<<endl;
+            if(is_debug)
+                cout << "best_exceed_outline_area: " << best_exceed_outline_area << endl;
+            cur_tree.Perturb();
+            cur_tree.Pack();
+            COORD_TYPE cur_exceed_outline_area = TotalExceedOutlineArea(cur_tree);
+            if(is_debug)
+                cout << "cur_exceed_outline_area: " << cur_exceed_outline_area << endl;
+            //扰动，遇到代价更小的解接收，否则回退，继续探索解空间直到达到最大容忍次数
+            int i = 0;
+            while(cur_exceed_outline_area >= best_exceed_outline_area && i < max_adjust_tolerability_iteration)
+            {
+                cur_tree = best_tree;
+                cur_tree.Perturb();
+                cur_tree.Pack();
+                cur_exceed_outline_area = TotalExceedOutlineArea(cur_tree);
+                if(is_debug)
+                    cout << "cur_exceed_outline_area: " << cur_exceed_outline_area
+                    << ", best_exceed_outline_area: " << best_exceed_outline_area << endl
+                    << (cur_exceed_outline_area >= best_exceed_outline_area) <<(i < max_adjust_tolerability_iteration) << endl;
+                i++;
+            }
+            //接受更好解，直到代价降为0
+            if(i != max_adjust_tolerability_iteration)
+            {
+                //cout<< "i: " << i << ", max_adjust_tolerability_iteration: " << max_adjust_tolerability_iteration << endl;
+                best_tree = cur_tree;
+                best_exceed_outline_area = cur_exceed_outline_area;
+            }
+            else
+            {
+
+                return false;
+            }
+        }
+        //调整成功
+        _tree = best_tree;
+        return true;
+    }
+    const int UnLegalLayer(BStarTree& _tree)
+    {
+        for(int it = 0; it < layer_size; it++)
+        {
+            if(_tree.ExceedOutlineArea(it) > 0)
+                return it;
+        }
+        return -1;
+    }
+    COORD_TYPE TotalExceedOutlineArea(BStarTree& _tree)
+    {
+        COORD_TYPE total_exceedoutline_area = 0;
+        for(int layer = 0; layer < layer_size; layer++)
+            total_exceedoutline_area += _tree.ExceedOutlineArea(layer);
+        return total_exceedoutline_area;
+    }
+    COORD_TYPE TotalArea(BStarTree& _tree)
     {
         COORD_TYPE total_area = 0;
-        for(int it = 0; it < layyer_size; it++)
-            total_area += _tree[it].Area();
+        for(int layer = 0; layer < layer_size; layer++)
+            total_area += _tree.Area(layer);
         return total_area;
     }
     /*double TotalWireLength(vector<Block>& _blocks)  //半周长 max|xi - xj| + max|yi - yj|   o(net)
@@ -884,14 +993,18 @@ public:
         return sum_half_perimeter;
     }
 
-    double Cost(vector<BStarTree>& _tree, vector<Block>& _blocks)
+    double Cost(BStarTree& _tree)
+    //alpha * TotalArea(_tree) / initial_average_area + (1 - alpha) * TotalWireLength(_tree.blocks) / initial_average_wirelength + gamma * TotalExceedOutlineArea(_tree)/initial_average_exceed_outline_area;
     {
-        if(alpha == 1)
-        {
-            return TotalArea(_tree) / initial_average_area;
-        }
-        else
-            return alpha * TotalArea(_tree) / initial_average_area + (1 - alpha) * TotalWireLength(_blocks) / initial_average_wire_length;
+        double cost = 0;
+        //用if语句，特殊情况下可以减少计算
+        if(alpha != 0)
+            cost += alpha * TotalArea(_tree) / initial_average_area;
+        if(alpha != 1)
+            cost += (1 - alpha) * TotalWireLength(_tree.blocks) / initial_average_wirelength;
+        if(gamma != 0)
+            cost += gamma * TotalExceedOutlineArea(_tree)/initial_average_exceed_outline_area;
+        return cost;
     }
     double Time()
     {
@@ -899,9 +1012,9 @@ public:
     }
     void Output(string output_file)
     {
-        cout << endl << _cfg.instance <<"instance completed" << endl;
+        cout << endl << _cfg.instance <<" instance completed" << endl;
         cout<<"random seed: " << _cfg.random_seed << endl;
-        cout <<"best wirelength: " << TotalWireLength(blocks_best) << endl;
+        cout <<"best wirelength: " << TotalWireLength(best_tree.blocks) << endl;
         //fout<<"dead_sapce_rate: "<<dead_sapce_rate<<endl;
         cout<<"initial_num_perturbs: "<<initial_num_perturbs<<endl;
         cout<<"iter: "<<iter<<endl<<"best_iter: "<<best_iter<<endl<<"best_cost: "<<best_cost<<endl\
@@ -913,19 +1026,23 @@ public:
             cout<<"output error in file: "<<output_file<<endl;
             exit(-1);
         }
-        OutputBlocks(fout, blocks_best);
+        OutputBlocks(fout, best_tree.blocks);
         OutputTrees(fout, best_tree);
-        fout<<"random seed: " << _cfg.random_seed << endl;
-        fout <<"best wirelength: " << TotalWireLength(blocks_best) << endl;
-        //fout<<"dead_sapce_rate: "<<dead_sapce_rate<<endl;
-        fout<<"initial_num_perturbs: "<<initial_num_perturbs<<endl;
-        fout<<"iter: "<<iter<<endl\
-            <<"best_iter: "<<best_iter<<endl\
-            <<"best_cost: "<<best_cost<<endl\
-            <<"reject_time: "<<reject_time<<endl\
-            <<"accept_inferior_time: "<<accept_inferior_time<<endl\
-            <<"update_best_time: "<<update_best_time<<endl\
-            <<"initial_wirelength: " << initial_wirelength<<endl
+        fout <<"random seed: " << _cfg.random_seed << endl;
+        fout <<"alpha: " << _cfg.alpha << endl;
+        fout <<"gamma: " << _cfg.gamma << endl;
+        fout <<"best wirelength: " << TotalWireLength(best_tree.blocks) << endl;
+        fout <<"initial_num_perturbs: "<<initial_num_perturbs<<endl;
+        fout << "iter: " << iter << endl\
+            << "best_iter: " << best_iter << endl\
+            << "best_cost: " << best_cost << endl\
+            << "reject_time: " << reject_time << endl\
+            << "accept_inferior_time: " << accept_inferior_time << endl\
+            << "update_best_time: " << update_best_time << endl\
+            << "adjustLegalOutline_fail_times: " << adjustLegalOutline_fail_times << endl
+            << "initial_wirelength: " << initial_wirelength << endl
+            << "initial_average_wirelength: " << initial_average_wirelength << endl
+            << initial_best_wirelength << ","
             <<"initial_iter: " << initial_iter<<endl
             <<"initial_time: "<<initial_time<<endl
             <<"total time cost: "<<Time()<<endl;
@@ -942,8 +1059,10 @@ public:
         fout.seekp(0, ios::end);
         if (fout.tellp() <= 0) {
             fout << "Instance,"
+                    "Alpha,"
+                    "Gamma,"
                     "RandSeed,"
-                    "FinalWireLength,"
+                    "BestWireLength,"
                     "Time,"
                     "Iteration,"
                     "BestIter,"
@@ -951,10 +1070,13 @@ public:
                     "reject_times,"
                     "accept_inferior_times,"
                     "update_best_times,"
+                    "outline_fail_times,"
                     "InitialWireLength,"
+                    "InitialAvgWireLength,"
+                    "InitialBestWireLength,"
                     "InitialTime,"
                     "InitialIteration," ;
-            for(int i=0; i<layyer_size; i++)
+            for(int i=0; i < layer_size; i++)
             {
                 fout << "layer_" + to_string(i) + "_width,"
                     << "layer_" + to_string(i) + "_height,"
@@ -964,23 +1086,28 @@ public:
             fout << endl;
         }
         fout << _cfg.instance << ","
-            << _cfg.random_seed << ","
-            << TotalWireLength(blocks_best) << ","
-            << Time() << ","
-            << iter << ","
-            << best_iter << ","
-            << best_cost << ","
-            << reject_time << ","
-            << accept_inferior_time << ","
-            << update_best_time << ","
-            << initial_wirelength << ","
+            << _cfg.alpha << ","
+            << _cfg.gamma << ","
+                << _cfg.random_seed << ","
+                << TotalWireLength(best_tree.blocks) << ","
+                << Time() << ","
+                << iter << ","
+                << best_iter << ","
+                << best_cost << ","
+                << reject_time << ","
+                << accept_inferior_time << ","
+                << update_best_time << ","
+                << adjustLegalOutline_fail_times << ","
+                << initial_wirelength << ","
+                << initial_average_wirelength << ","
+                << initial_best_wirelength << ","
             << initial_time << ","
             << initial_iter << "," ;
-        for(int i=0; i<layyer_size; i++)
+        for(int i=0; i < layer_size; i++)
         {
-            fout << best_tree[i].width_ << ","
-                 << best_tree[i].height_ << ","
-                 << best_tree[i].FillingRate()  << ",";
+            fout << best_tree.width_[i] << ","
+                 << best_tree.height_[i] << ","
+                 << best_tree.FillingRate(i)  << ",";
         }
         fout << endl;
     }

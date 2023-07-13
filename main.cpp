@@ -67,14 +67,14 @@ int main()  //(double alpha, string blockpath, string netpath, string output_fil
 //    return 0;
 
     string path = "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\";
-    string instance = "ICCAD2023_floorplanning_case4";
+    string instance = "ICCAD2023_floorplanning_case2";
     float time_limit = 300;
     for(int random_seed = 1; random_seed <= 10; random_seed++)
     {
         Config cfg(path, instance, random_seed ,time_limit);
         Solver s(cfg);
         s.run();
-        s.record_log(path + "SA.csv");
+        s.record_log(path + "SA_a=0,r=1.csv");
     }
 
 //    /*tree结构和操作测试*/
@@ -87,7 +87,7 @@ int main()  //(double alpha, string blockpath, string netpath, string output_fil
 //    tree.OutputBlocks(std::cout);
 //    for(int i=0; i<100; i++)
 //    {
-//        tree.Perturb();
+//        tree.PerturbAndPack();
 //        tree.Pack();
 //        tree.OutputBlocks(std::cout);
 //        //assert(tree.pack_num == tree.b_num);
