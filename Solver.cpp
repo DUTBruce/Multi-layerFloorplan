@@ -23,8 +23,8 @@ public:
     Config _cfg;
     int b_num;          //总共的block数量
 
-    //参数信息
     COORD_TYPE outline_width = 23000, outline_height = 19000;    //固定轮廓的宽和高，在读取时赋值，在初始化树时存入树中
+    //参数信息
     double alpha, gamma;  //代价函数的面积系数（面积/线长所占比重），轮廓约束系数
     double initial_average_area, initial_average_wirelength;   //初始化时确定的平均面积和线长，便于计算多目标Cost() = area/avg + wirelength/avg;
     double initial_average_exceed_outline_area; //初始化时平均的超出轮廓代价，等于超出的轮廓面积（宏观）+超出轮廓的模块面积（细化）
