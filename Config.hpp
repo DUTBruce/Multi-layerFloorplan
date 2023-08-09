@@ -28,6 +28,9 @@
 #include<string>
 
 #define FixedOutline true       //是否为固定轮廓
+#define IfUtilizationLimit true //是否有利用率限制
+#define ShrinkNet //是否为缩核算例
+#define DeleteBlocksNotInNets
 #define COORD_TYPE long long int    //坐标类型
 #define COORD_TYPE_MAX LONG_LONG_MAX
 
@@ -54,6 +57,9 @@ public:
         block_file = path + instance + ".blocks";
         net_file = path + instance + ".nets";
         output_file = path + instance + "_seed=" + to_string(random_seed) + ".output";
+    }
+    Config(string blocks_file, string nets_file, string output_file, unsigned int random_seed, float time_limit):
+            block_file(blocks_file), net_file(nets_file), output_file(output_file), random_seed(random_seed), time_limit(time_limit){
     }
 };
 #endif

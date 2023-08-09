@@ -66,15 +66,19 @@ int main()  //(double alpha, string blockpath, string netpath, string output_fil
 //    cout << x0 << x1 << y0 << y1 << endl;
 //    return 0;
 
-    string path = "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\";
-    string instance = "ICCAD2023_floorplanning_case2";
+    string path = "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\ICCAD2023_floorplanning_macro_core_shrinknet\\";
+    string instance = "ICCAD2023_floorplanning_case_4(1)";
     float time_limit = 300;
-    for(int random_seed = 1; random_seed <= 10; random_seed++)
+    for(int random_seed = 1; random_seed <= 1; random_seed++)
     {
         Config cfg(path, instance, random_seed ,time_limit);
         Solver s(cfg);
-        s.run();
-        s.record_log(path + "SA_a=0,r=1.csv");
+        if(!s.run())
+        {
+            cerr << "run failed" << endl;
+            return 3;
+        }
+        s.record_log(path + "LocalSearch_Useratio_a=0,r=1.csv");
     }
 
 //    /*tree结构和操作测试*/
@@ -84,7 +88,7 @@ int main()  //(double alpha, string blockpath, string netpath, string output_fil
 //    nets = {{0,1,3}, {2,4,5}, {0,1,2,3,4,5}};
 //    tree.Initialization();
 //    tree.Pack();
-//    tree.OutputBlocks(std::cout);
+//    tree.OutputBloc9ks(std::cout);
 //    for(int i=0; i<100; i++)
 //    {
 //        tree.PerturbAndPack();

@@ -30,12 +30,13 @@ public:
     {
         COORD_TYPE max_y = 0;
         auto iter = points.begin();
-        while(iter->first <= x1 && iter != points.end()) //找到最后一个<=x1的点
+        while(iter != points.end() && iter->first <= x1) //找到最后一个<=x1的点
             iter++;
         if(iter == points.end())
             return 0;
-        iter--;
-        while(iter->first < x2 && iter != points.end())
+        if(iter != points.begin())
+            iter--;
+        while(iter != points.end() && iter->first < x2)
         {
             if(iter->second > max_y)
                 max_y = iter->second;
@@ -49,34 +50,43 @@ public:
             max_x = x2;
         if(y > max_y)
             max_y = y;*/
-        if(points.size() == 0)
+        if(points.size() == 0)  //等高线为空时，直接添加到等高线中
         {
-            assert(x1==0);
+            assert(x1==0);      //此时一定是根节点，x1==0
             points.push_back({x1,y});
             points.push_back({x2,y});
         }
+        //1. 删除原等高线在x1--x2之间的点
         auto iter = points.begin();
-        while(iter->first < x1 && iter != points.end()) //找到第一个>=x1的点
+        while(iter != points.end() && iter->first < x1) //1.1 找到第一个>=x1的点
             iter++;
-        iter--;
-        COORD_TYPE last_y0 = iter->second;
-        iter++;
-        while(iter->first < x2 && iter != points.end())
+        COORD_TYPE  last_y0;  //最后（最右边）删除节点的y坐标，以在2.3中放置
+        if(iter == points.begin())
+        {
+            last_y0 = iter->second;
+        }
+        else
+        {
+            iter--;
+            last_y0 = iter -> second;
+            iter++;
+        }
+        while(iter != points.end() && iter->first < x2) //1.2 逐个删除在[x1,x2)中的等高线结点
         {
             last_y0 = iter->second;
             iter = points.erase(iter);//删除后返回下一个迭代器
         }
-        //分情况插入新的等高线结点
-        if(iter == points.end())
+        //2. 分删完后新等高线情况插入新的等高线结点，其中iter在删除完节点的后边位置，即待插入位置
+        if(iter == points.end())    //2.1 新模块在等高线轮廓右边，直接加入
         {
             points.insert(iter, {x1,y});
             points.insert(iter, {x2,y});
         }
-        else if(iter->first == x2)
+        else if(iter->first == x2)  //2.2 新模块右端刚好覆盖原来删除的等高线节点集
         {
             points.insert(iter, {x1,y});
         }
-        else    //iter->first > x2
+        else                        //2.3 新模块右端在原等高线节点之间，即有剩余未覆盖部分被截断成两段，{x1,y}和{x2,last_y0}
         {
             /*cout<<"..";
             Show();此时已经删除了结点信息，需提前保存last_y0*/

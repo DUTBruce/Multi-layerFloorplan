@@ -1,0 +1,37 @@
+name,x,y,layer,rotated_angle,width,height,area,exceed_outline_area,left,right,parent,is_from_left,
+macro_C2790,0,7349,0,90,8580,11319,97117020,0,2,-1,6,0,
+macro_C2791,9221,0,0,0,11319,8580,97117020,0,-1,-1,13,1,
+macro_C2792,8580,8580,0,0,11616,8448,98131968,0,-1,-1,0,1,
+macro_C2793,9209,0,1,0,11616,8448,98131968,0,-1,-1,11,1,
+macro_C2794,0,7279,1,270,8679,11352,98524008,0,5,-1,8,0,
+macro_C2795,8679,8448,1,0,11352,8679,98524008,0,-1,-1,4,1,
+core_C0,0,0,0,0,3908,2574,10059192,0,9,0,-1,0,
+core_C1,3908,4041,0,270,3300,3308,10916400,0,13,-1,9,0,
+core_C4,0,0,1,0,3962,2640,10459680,0,10,4,-1,0,
+core_C7,3908,0,0,90,2673,4041,10801593,0,-1,7,6,1,
+core_C9,3962,0,1,270,3267,3284,10728828,0,11,12,8,1,
+core_C11,7229,0,1,90,1980,4950,9801000,0,3,-1,10,1,
+core_C12,3962,3284,1,90,2607,3995,10414965,0,-1,-1,10,0,
+core_C13,7208,0,0,90,2013,5082,10230066,0,1,-1,7,1,
+Wirelength: 1.95015e+07
+layer(tree) info:
+layer: 0 ,width: 20540 ,height: 18668 ,area: 383440720 ,blocks_area: 334373259, filling_rate: 0.872034, utilizatio_rate: 0.765156
+layer: 1 ,width: 20825 ,height: 18631 ,area: 387990575 ,blocks_area: 336584457, filling_rate: 0.867507, utilizatio_rate: 0.770216
+random seed: 3
+alpha: 0
+gamma: 1
+best wirelength: 1.95015e+07
+initial_num_perturbs: 420
+iter: 0
+best_iter: 0
+best_cost: 0.374812
+reject_time: 0
+accept_inferior_time: 0
+update_best_time: 0
+adjustLegalOutline_fail_times: 0
+outline_adjust_time: 0.004
+initial_wirelength: 2.99404e+07
+initial_average_wirelength: 7.98812e+07
+2.99404e+07,initial_iter: 420
+initial_time: 0.04
+total time cost: 0.461

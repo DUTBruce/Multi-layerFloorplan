@@ -1,0 +1,5 @@
+Instance,Alpha,Gamma,RandSeed,BestWireLength,Time,Iteration,BestIter,BestCost,reject_times,accept_inferior_times,update_best_times,outline_fail_times,InitialWireLength,InitialAvgWireLength,InitialBestWireLength,InitialTime,InitialIteration,layer_0_width,layer_0_height,layer_0_fillrate,layer_1_width,layer_1_height,layer_1_fillrate,
+ICCAD2023_floorplanning_case2,0,1,2,4.24359e+06,157.465,5880,336,0.0358285,214793,180282,31,2,7.4809e+07,1.18442e+08,8.18948e+07,0.056,196,22704,17259,0.998555,21757,17787,0.722646,
+ICCAD2023_floorplanning_case2,0,1,4,4.56144e+06,159.384,5880,4726,0.0417069,224087,176093,22,2,7.4809e+07,1.09369e+08,5.05564e+07,0.05,196,22968,17358,0.986539,22205,17754,0.704233,
+ICCAD2023_floorplanning_case2,0,1,9,4.4677e+06,151.37,5880,1072,0.0407726,222567,177066,34,4,7.4809e+07,1.09576e+08,1.79103e+07,0.05,196,22243,17556,0.714562,22968,17127,0.996268,
+ICCAD2023_floorplanning_case2,0,1,10,4.52204e+06,159.774,5880,2198,0.0442353,224060,176125,46,8,7.4809e+07,1.02227e+08,5.66705e+07,0.049,196,22638,17259,0.749299,22968,18339,0.897846,

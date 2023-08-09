@@ -1,0 +1,1 @@
+设置初始调整轮廓参数max_adjust_tolerability_iteration = b_num * b_num * 30， 轮廓局部最优10个种子有6个不合法，增加为b_num * b_num * 300后仍然不合法

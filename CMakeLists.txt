@@ -8,4 +8,4 @@ set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
 set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3")
 
 set(CMAKE_CXX_STANDARD 14)
-add_executable(floorplanning_iccad2023_btree main.cpp Solver.cpp Config.hpp BStarTree.cpp Net.hpp Contour.hpp)
+add_executable(floorplanning_iccad2023_btree main.cpp FloorPlaner.cpp Solver.cpp Config.hpp BStarTree.cpp Net.hpp Contour.hpp)

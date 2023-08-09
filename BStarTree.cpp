@@ -27,6 +27,7 @@ public:
     vector<COORD_TYPE> blocks_area;     //当前树（布图）内所有blocks的面积和
     COORD_TYPE outline_width_, outline_height_; //固定轮廓的宽和高
     vector<COORD_TYPE> exceed_outline_blocks_area;   //超出轮廓的模块面积和
+    vector<double> userate_max;      // 利用率限制，#define IfUtilizationLimit true时使用
     BStarTree(){
     }
     BStarTree(vector<Block> b, int layer_size, COORD_TYPE outline_width = COORD_TYPE_MAX, COORD_TYPE outline_height = COORD_TYPE_MAX)
@@ -51,6 +52,7 @@ public:
     //6.15新增，Perturb后自动pack扰动的树
     //6.20新增已解决问题: 移动模块时可能将树移为空，树为空时不会再移入模块。已解决：增加把模块移到对应树根节点之前的操作，也就是新增to的选择
     //7.4新增，把Perturb和Pack移到BStarTree内，并记录扰动过的层，方便后续多次扰动一次pack的需求
+    //7.27新增，如果有利用率限制则扰动不会执行（后续改为执行后填补利用率违反）
     {
         bool is_debug = false;
         if(is_debug)
@@ -80,7 +82,7 @@ public:
             {
                 int block_id = rand()%b_num;
                 if(is_debug)
-                    cout<<"rotate "<<block_id<<endl;
+                    cout<<"rotateOrFlexSize "<<block_id<<endl;
                 RotateBlock(block_id);
                 break;
             }
@@ -114,27 +116,68 @@ public:
         }
         if(is_debug)
             cout << "complete perturb" << endl;
+        if(is_debug && IfUtilizationLimit == true){   //看perturb之后pack之前的blocks_area面积计算的是否正确，如果正确会和pack后的一致
+            OutputLayerInfo(cout);
+        }
     }
     void RotateBlock(int id)
     {
-        blocks[id].rotate();
-        pertub_layers.insert(blocks[id].layer);
+        if(IfUtilizationLimit == true && blocks[id].shape_num != 1) //有利用率限制时，需要判断模块更改形状后的面积是否会超利用率
+        {
+            Block temp_block = blocks[id];
+            int layer = blocks[id].layer;
+            int random = rand() % 2;
+            if(random == 0)      //旋转
+            {
+                blocks[id].rotateOrFlexSize(1);
+            }
+            else   //调整尺寸
+            {
+                temp_block.rotateOrFlexSize(2); //调整形状后的模块
+                //int shape_id = (blocks[id].shape_id + 1) % blocks[id].shape_num;
+                if(blocks_area[layer] + temp_block.area() - blocks[id].area() > use_area_limit(layer))//调整后超出利用率，则只旋转不改变形状
+                {
+                    blocks[id].rotateOrFlexSize(1);
+                }
+                else //不超出则正常调整，并更新面积
+                {
+                    blocks_area[layer] = blocks_area[layer] + temp_block.area() - blocks[id].area();
+                    blocks[id].rotateOrFlexSize(2);
+                }
+            }
+
+        }
+        else
+        {
+            blocks[id].rotateOrFlexSize();
+            pertub_layers.insert(blocks[id].layer);
+        }
     }
     void MoveBlocks(int from, int to)
     {
+
         //cout << "begin delete" << endl;
         int layer_from = blocks[from].layer;    //预先存一下所在层，不然后续更改后blocks_cur[from].layer会变为to的layer
+        int layer_to = to < blocks.size()? blocks[to].layer: to - blocks.size();
+        if(IfUtilizationLimit == true && layer_to != layer_from) //有利用率限制且跨层移动时，需要判断模块移动后那层的面积是否会超利用率
+        {
+            if( blocks_area[layer_to] + blocks[from].area(layer_to)  > use_area_limit(layer_to) )
+                return;
+            else{
+                blocks_area[layer_to] += blocks[from].area(layer_to);
+                blocks_area[layer_from] -= blocks[from].area(layer_from);
+            }
+        }
         DeleteBlock(from);
-        int layer_to;
         if(to < blocks.size())  //1.正常移动到模块to后面
         {
-            layer_to = blocks[to].layer;
+            //layer_to = blocks[to].layer;
             //cout << "begin insert" << endl;
             InsertBlock(from, to);
         }
         else    //2. 模块移动到布局 to - b_num (0到layyer_size-1) 的根节点之前
         {
-            layer_to = to - blocks.size();
+            //layer_to = to - blocks.size();
             InsertRoot(from, layer_to);
         }
         pertub_layers.insert(layer_from);
@@ -150,6 +193,16 @@ public:
         }
         Block& block_1 = blocks[id_1];      //记得引用！不然是临时变量，修改完了没用！
         Block& block_2 = blocks[id_2];
+        if(IfUtilizationLimit == true && block_1.layer != block_2.layer) //有利用率限制且跨层移动时，需要判断模块交换后两层的面积是否会超利用率
+        {
+            if( blocks_area[block_1.layer] - block_1.area(block_1.layer) + block_2.area(block_1.layer)  > use_area_limit(block_1.layer)   //模块1所在层
+                || blocks_area[block_2.layer] - block_2.area(block_2.layer) + block_1.area(block_2.layer)  > use_area_limit(block_2.layer))   //模块2所在层
+                return;
+            else{
+                blocks_area[block_1.layer] = blocks_area[block_1.layer]- block_1.area(block_1.layer) + block_2.area(block_1.layer);
+                blocks_area[block_2.layer] = blocks_area[block_2.layer] - block_2.area(block_2.layer) + block_1.area(block_2.layer);
+            }
+        }
         int root_1 = root[block_1.layer];
         int root_2 = root[block_2.layer];
         swap(block_1.left, block_2.left);
@@ -334,6 +387,19 @@ public:
             for(int i = 0; i < layer_size; i++)
                 Pack(i);
         }
+        if(IfUtilizationLimit == true)
+        {
+            for(int layer: pertub_layers)
+            {
+                if(UtilizationRate(layer) > userate_max[layer])
+                {
+//                    OutputBlocks(cout);
+//                    OutputLayerInfo(cout);
+                    cerr << "IfUtilizationLimit failed in Pack()" << endl;
+                    exit(-1);
+                }
+            }
+        }
     }
     void Pack(int layer)
     {
@@ -469,7 +535,7 @@ public:
             case 0: //旋转模块 o(1)
             {
                 int block_id = rand()%tree_b_num;
-                //cout<<"rotate "<<block_id<<endl;
+                //cout<<"rotateOrFlexSize "<<block_id<<endl;
                 RotateBlock(block_id);
                 break;
             }
@@ -649,9 +715,13 @@ public:
         assert(layer < layer_size);
         return blocks_area[layer];
     }
-    const double FillingRate(int layer)
+    const double FillingRate(int layer) //填充率，模块面积/围成模块轮廓的面积
     {
-        return tree_b_num[layer] == 0 ? 1: (double)blocks_area[layer] / Area(layer);
+            return tree_b_num[layer] == 0 ? 1: (double)blocks_area[layer] / Area(layer);
+    }
+    const double UtilizationRate(int layer) //利用率，模块面积/固定轮廓（芯片）面积
+    {
+        return tree_b_num[layer] == 0 ? 0: (double)blocks_area[layer] / (outline_width_*outline_height_);
     }
     /*未使用，原计算单树的半周长线长
     double WireLength()    //半周长 max|xi - xj| + max|yi - yj|   o(net)
@@ -680,7 +750,6 @@ public:
         }
         return sum_half_perimeter;
     }*/
-
     void initial_tree_struct()  //初始化树结构
     {
         bool is_debug = false;
@@ -707,6 +776,140 @@ public:
         if(is_debug)
             cout << "initial_tree_struct() is over" << endl;
     }
+    double use_ratio(int layer) //第i层当前的利用率
+    {
+        assert(layer >= 0 && layer < layer_size);
+        return (double) blocks_area[layer] / (outline_width_ * outline_height_);
+    }
+    double use_area_limit(int layer) //第i层的模块面积限制，利用率*轮廓面积
+    {
+        assert(layer >= 0 && layer < layer_size);
+        return outline_width_ * outline_height_ * userate_max[layer];
+    }
+    double use_ratio_add_block(int layer, Block &b) //第i层当前的利用率
+    {
+        assert(layer >= 0 && layer < layer_size);
+        return (double) (blocks_area[layer] + b.area(layer)) / (outline_width_ * outline_height_);
+    }
+    static bool cmp(Block &b1, Block &b2)
+    {
+        return (double)b1.area(0)  / b1.area(1)  <  (double)b2.area(0)  / b2.area(1);
+    }
+    bool initial_tree_struct_with_useratio(vector<double> userate_max)  //在满足利用率的前提下初始化树结构是否成功，不成功的话还需要调整
+    //7.29 按照模块01两层面积比例升序进行摆放，优先摆放在0层/1层比例小的在0层，1层同理
+    {
+        bool is_debug = false;
+        bool is_successful = true;
+        if(layer_size == 2)
+        {
+            //todo 排序后需要更新nets的connected_blocks
+            //sort(blocks.begin(), blocks.end(), cmp);
+            if(is_debug)
+            {
+                for(int i=0; i<blocks.size(); i++)
+                {
+                    cout << blocks[i].name << ", area(0)/area(1): " << (double)blocks[i].area(0)  / blocks[i].area(1) << endl;
+                }
+            }
+        }
+        assert(userate_max.size() == layer_size);
+        this->userate_max = userate_max;
+        // 按排序放置模块，直到该层利用率满了就顺延，直到所有层放满或模块放完
+        int cur_block_id = 0;   //当前放置的模块
+        int cur_layer = 0;    //当前放置的层
+        while(cur_block_id < blocks.size())
+        {
+            if(is_debug == true)
+            {
+                cout << "cur_block_id: " << cur_block_id << endl;
+            }
+            Block &cur_block = blocks[cur_block_id];
+            //1. 逐层放置，如果放不进去就下一层，最多尝试 layer_size 层
+            for(cur_layer = 0; cur_layer < layer_size; cur_layer++)
+            {
+                if(is_debug == true)
+                {
+                    cout << "cur_layer: " << cur_layer  <<  ", blocks_area[cur_layer]: " << blocks_area[cur_layer]
+                        << ", use_ratio_add_block(cur_layer, cur_block): " << use_ratio_add_block(cur_layer, cur_block) <<endl;
+                }
+                //1.1 当前层，能放进去，继续放下一个块
+                if(use_ratio_add_block(cur_layer, cur_block) < userate_max[cur_layer])
+                {
+                    InsertRoot(cur_block_id, cur_layer);
+                    blocks_area[cur_layer] += cur_block.area(cur_layer);
+                    break;
+                }
+                //1.2 放不进去，尝试下一层
+                else
+                {
+                    //cur_layer = (cur_layer + 1) % layer_size;
+                }
+            }
+            //1.3 尝试layer_size层都没放进去，那就放当前层（或随机选一层）放，并将算法标记为失败
+            if(cur_layer == layer_size)
+            {
+                is_successful = false;
+                InsertRoot(cur_block_id, cur_layer);
+                blocks_area[cur_layer] += cur_block.area(cur_layer);
+                cur_layer = (cur_layer + 1) % layer_size;
+            }
+            cur_block_id ++;
+        }
+        return is_successful;
+    }
+    /*7.29之前旧的方法，挨层放直到放不下，case4失败
+    bool initial_tree_struct_with_useratio(vector<double> userate_max)  //在满足利用率的前提下初始化树结构是否成功，不成功的话还需要调整
+    {
+        bool is_debug = false;
+        bool is_successful = true;
+        assert(userate_max.size() == layer_size);
+        this->userate_max = userate_max;
+        // 按顺序将每个模块放置到每一层，直到该层利用率满了就顺延，直到所有层放满或模块放完
+        int cur_block_id = 0;   //当前放置的模块
+        int cur_layer = 0;    //当前放置的层
+        while(cur_block_id < blocks.size())
+        {
+            if(is_debug == true)
+            {
+                cout << "cur_block_id: " << cur_block_id << endl;
+            }
+            Block &cur_block = blocks[cur_block_id];
+            int fail_times;
+            //1. 逐层放置，如果放不进去就下一层，最多尝试 layer_size 层
+            for(fail_times = 0; fail_times < layer_size; fail_times++)
+            {
+                if(is_debug == true)
+                {
+                    cout << "fail_times: " << fail_times <<", cur_layer: " << cur_layer << endl;
+                    cout << "blocks_area[cur_layer]: " << blocks_area[cur_layer]
+                         << ", use_ratio_add_block(cur_layer, cur_block): " << use_ratio_add_block(cur_layer, cur_block) <<endl;
+                }
+                //1.1 当前层，能放进去，循环停止
+                if(use_ratio_add_block(cur_layer, cur_block) < userate_max[cur_layer])
+                {
+                    InsertRoot(cur_block_id, cur_layer);
+                    blocks_area[cur_layer] += cur_block.area(cur_layer);
+                    cur_layer = (cur_layer + 1) % layer_size;
+                    break;
+                }
+                    //1.2 放不进去，下一层
+                else
+                {
+                    cur_layer = (cur_layer + 1) % layer_size;
+                }
+            }
+            //1.3 尝试layer_size层都没放进去，那就放当前层（或随机选一层）放，并将算法标记为失败
+            if(fail_times == layer_size)
+            {
+                is_successful = false;
+                InsertRoot(cur_block_id, cur_layer);
+                blocks_area[cur_layer] += cur_block.area(cur_layer);
+                cur_layer = (cur_layer + 1) % layer_size;
+            }
+            cur_block_id ++;
+        }
+        return is_successful;
+    }*/
     void initial_blocks(int left, int right, int layer)    //将blocks[left] - [right-1]之间的节点初始化到树layer中
     {
         root[layer] = left;
@@ -776,8 +979,8 @@ public:
         out<<"layer(tree) info:"<<endl;
         for(int i=0; i < layer_size; i++)
         {
-            out<<"layer: "<<i<<" ,width: "<<width_[i]<<" ,height: "<<height_[i]<<" ,area: "<<Area(i)
-               << ", filling_rate: " << FillingRate(i) << endl;
+            out<<"layer: "<<i<<" ,width: "<<width_[i]<<" ,height: "<<height_[i]<<" ,area: "<<Area(i) <<" ,blocks_area: "<<BlocksArea(i)
+               << ", filling_rate: " << FillingRate(i) << ", utilizatio_rate: " << UtilizationRate(i) << endl;
         }
     }
 
