@@ -41,6 +41,8 @@ public:
     int layyer_max = 2;     //共有几层Floorplan
     double alpha = 0;       //代价函数的面积系数（面积/线长所占比重），0-1
     double gamma = 1;       //轮廓约束系数，任意指定值，没有固定轮廓约束时gamma=0
+    int strategy_num = 2;
+    int strategy;           //算法运行策略，0表示默认策略（面积比排序+按序放置），1表示不排序按序放置，2表示隔层轮流放置
     string path; //= "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\";
     string instance; //= "ICCAD2023_floorplanning_case2";
     string block_file, net_file, output_file;
@@ -52,14 +54,14 @@ public:
         random_seed = 0;    //std::random_device{}()
         time_limit = 300;
     }
-    Config(string path, string instance, unsigned int random_seed, float time_limit):
-            random_seed(random_seed), path(path), instance(instance), time_limit(time_limit){
+    Config(string path, string instance, unsigned int random_seed, float time_limit, int strategy = 0):
+            random_seed(random_seed), path(path), instance(instance), time_limit(time_limit), strategy(strategy%strategy_num){
         block_file = path + instance + ".blocks";
         net_file = path + instance + ".nets";
         output_file = path + instance + "_seed=" + to_string(random_seed) + ".output";
     }
-    Config(string blocks_file, string nets_file, string output_file, unsigned int random_seed, float time_limit):
-            block_file(blocks_file), net_file(nets_file), output_file(output_file), random_seed(random_seed), time_limit(time_limit){
+    Config(string blocks_file, string nets_file, string output_file, unsigned int random_seed, float time_limit, int strategy = 0):
+            block_file(blocks_file), net_file(nets_file), output_file(output_file), random_seed(random_seed), time_limit(time_limit), strategy(strategy%strategy_num){
     }
 };
 #endif

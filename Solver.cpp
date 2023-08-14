@@ -65,19 +65,20 @@ public:
     }
     bool solve(string blockpath, string netpath, string output_file)
     {
+        cout<<"initialing..."<<endl;
         if(!Initialization(blockpath, netpath))
             return false;
         //OutputBlocks(std::cout, best_tree.blocks);
         //OutputTrees(std::cout,best_tree);
-        cout<< "1, time cost: "<< (double)(clock()-start_ms) / CLOCKS_PER_SEC << endl;
+        cout<< "initial over, time cost: "<< (double)(clock()-start_ms) / CLOCKS_PER_SEC << endl;
 
         cout<<"search running..."<<endl;
         LocalSearch(best_tree, b_num*300, _cfg.time_limit);
         //OutputBlocks(std::cout, best_tree.blocks);
         //OutputTrees(std::cout,best_tree);
-        cout<< "2, time cost: "<< (double)(clock()-start_ms) / CLOCKS_PER_SEC << endl;
-        AdjustLegalOutline(best_tree, b_num*30, b_num*b_num);
-        cout<< "3 over, time cost: "<< (double)(clock()-start_ms) / CLOCKS_PER_SEC << endl;
+        cout<< "search over, time cost: "<< (double)(clock()-start_ms) / CLOCKS_PER_SEC << endl;
+//        AdjustLegalOutline(best_tree, b_num*30, b_num*b_num); 在search更新最优解时已经有了调整轮廓，不用最后再调整一次
+//        cout<< "3 over, time cost: "<< (double)(clock()-start_ms) / CLOCKS_PER_SEC << endl;
 
 
 //        SA();
@@ -205,7 +206,7 @@ public:
                 }
                 else
                 {
-                    cout << "LocalSearch AdjustLegalOutline() failed" << endl;
+                    //cout << "LocalSearch AdjustLegalOutline() failed" << endl;
                 }
             }
             else    //没搜到更好解，回退，记录失败次数
@@ -525,7 +526,7 @@ public:
         }
         if(FixedOutline == true){
             int perturb_times = b_num * b_num;
-            int max_adjust_tolerability_iteration = b_num * 30;
+            int max_adjust_tolerability_iteration = 3000;
             while(AdjustLegalOutline(cur_tree, max_adjust_tolerability_iteration, perturb_times) == false
                   && (double)(clock()-start_ms)/CLOCKS_PER_SEC < _cfg.time_limit ) //不成功则逐渐加大扰动力度
             {
@@ -560,7 +561,7 @@ public:
         double total_wirelength = 0;
         COORD_TYPE  total_exceed_outline_area = initial_exceed_outline_area;
 
-        initial_num_perturbs = b_num * 30;  //随机初始化的次数（单目标的话选取其中最好的解，多目标时不方便量化，不一定是最好的解）
+        initial_num_perturbs = b_num;  //随机初始化的次数（单目标的话选取其中最好的解，多目标时不方便量化，不一定是最好的解）
         COORD_TYPE cur_area;
         double cur_wirelength;
         double cur_cost;
@@ -658,17 +659,19 @@ public:
 //            best_tree.emplace_back(&blocks_best, i, outline_width, outline_height);
 //            pre_tree.emplace_back(&blocks_pre, i, outline_width, outline_height);
 //        }
-        cur_tree = BStarTree(initial_blocks, layer_size, outline_width, outline_height);
+        cur_tree = BStarTree(initial_blocks, layer_size, _cfg, outline_width, outline_height);
         if(IfUtilizationLimit == true)
         {
+
             if( !cur_tree.initial_tree_struct_with_useratio(userate_max) )
             {
                 cerr << "failed in initial_tree_struct_with_useratio()" << endl;
                 exit(3);
             }
 //            OutputTrees(cout,cur_tree);
-//            cur_tree.Pack();
-//            OutputTrees(cout,cur_tree);
+            cur_tree.Pack();
+//            OutputBlocks(cout, cur_tree.blocks);
+            OutputTrees(cout,cur_tree);
 //            exit(0);
         }
         else
@@ -1421,6 +1424,7 @@ public:
                     "Alpha,"
                     "Gamma,"
                     "RandSeed,"
+                    "Strategy,"
                     "BestWireLength,"
                     "Time,"
                     "Iteration,"
@@ -1450,6 +1454,7 @@ public:
             << _cfg.alpha << ","
             << _cfg.gamma << ","
                 << _cfg.random_seed << ","
+                << _cfg.strategy << ","
                 << TotalWireLength(best_tree.blocks) << ","
                 << Time() << ","
                 << iter << ","

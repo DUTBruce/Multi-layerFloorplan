@@ -68,17 +68,17 @@ int main()  //(double alpha, string blockpath, string netpath, string output_fil
 
     string path = "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\ICCAD2023_floorplanning_macro_core_shrinknet\\";
     string instance = "ICCAD2023_floorplanning_case_4(1)";
-    float time_limit = 300;
-    for(int random_seed = 1; random_seed <= 1; random_seed++)
+    float time_limit = 30;
+    for(int random_seed = 1; random_seed <= 10; random_seed++)
     {
-        Config cfg(path, instance, random_seed ,time_limit);
+        Config cfg(path, instance, random_seed ,time_limit, random_seed);
         Solver s(cfg);
         if(!s.run())
         {
             cerr << "run failed" << endl;
             return 3;
         }
-        s.record_log(path + "LocalSearch_Useratio_a=0,r=1.csv");
+        s.record_log(path + "floorplan_log.csv");
     }
 
 //    /*tree结构和操作测试*/
