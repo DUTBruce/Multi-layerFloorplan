@@ -69,9 +69,9 @@ int main()  //(double alpha, string blockpath, string netpath, string output_fil
     string path = "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\ICCAD2023_floorplanning_macro_core_shrinknet\\";
     string instance = "ICCAD2023_floorplanning_case_4(1)";
     float time_limit = 30;
-    for(int random_seed = 1; random_seed <= 10; random_seed++)
+    for(int random_seed = 0; random_seed <= 0; random_seed++)
     {
-        Config cfg(path, instance, random_seed ,time_limit, random_seed);
+        Config cfg(path, instance, random_seed ,time_limit, 1);
         Solver s(cfg);
         if(!s.run())
         {

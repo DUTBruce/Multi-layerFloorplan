@@ -14,7 +14,7 @@ using namespace std;
 class BStarTree      //一个tree即一个多层floorplan，记录了包含哪些模块以及模块的放置位置
 {
 public:
-    vector<Block> blocks;  //对Solver中blocks的指针（引用会出错）
+    vector<Block> blocks;  //Solver中blocks的副本（引用会出错，指针会浅复制问题）
     int layer_size;    //几层的floorplanning,下面的数组vector都表示在第i层的情况(例如各层根节点,根节点坐标,各层模块数量)
     vector<int> root;           //根节点编号
     vector<COORD_TYPE> root_x, root_y; //根节点坐标（默认是最贴着左下角(0,0)，后续也可以调整）
@@ -427,6 +427,35 @@ public:
         if(is_debug)
             cout << "insert over" << endl;
     }
+    /*void AddBlockToEnd(Block block)
+    // 废弃，改用预留轮廓的方法了。把block插入到结点的最后，1.不影响其他模块相对位置，2.满足各层利用率和芯片长宽限制。
+    // 可插入位置：
+    {
+        static int cur_layer = -1;   //静态变量标记现在放在哪一层了，只会初始化一次
+        int try_times = 0;
+        //1. 逐层放置，如果放不进去就下一层，最多尝试 layer_size 层
+        for (try_times = 0; try_times < layer_size; try_times++)
+        {
+            cur_layer = (cur_layer + 1) % layer_size;
+            //1.1 当前层，能放进去
+            if (use_ratio_add_block(cur_layer, block) <= userate_max[cur_layer])
+            {
+                InsertInFixedOutlineWidth(cur_block_id, cur_layer);    //插入到最后模块
+                blocks_area[cur_layer] += block.area(cur_layer);
+                break;
+            }
+                //1.2 放不进去，尝试下一层
+            else
+            {
+                //cur_layer = (cur_layer + 1) % layer_size;
+            }
+        }
+        if(try_times = layer_size)    //放各层全放不下
+        {
+            cerr << "AddBlockToEnd failed! use_ratio exceed! ";
+            exit(3);
+        }
+    }*/
 
     void Pack()
     {
@@ -861,20 +890,41 @@ public:
     {
         return (double)b1.area(0) / b1.area(1) < (double)b2.area(0) / b2.area(1);
     }
-    bool initial_tree_struct_with_useratio(vector<double> userate_max)  //在满足利用率的前提下初始化树结构是否成功，不成功的话还需要调整
+    bool initial_tree_struct_with_useratio(vector<double> userate_max, int strategy)  //在满足利用率的前提下初始化树结构是否成功，不成功的话还需要调整
+    {
+        if(strategy % 2 == 0)  //优先策略0
+        {
+            if( initial_tree_struct_with_useratio_0(userate_max))
+                return true;
+            else
+            {
+                blocks_area.clear();
+                blocks_area.resize(layer_size, 0);
+                assert(blocks_area[0]==0);
+                return initial_tree_struct_with_useratio_1(userate_max);
+            }
+        }
+        else    //优先策略1
+        {
+            if( initial_tree_struct_with_useratio_1(userate_max))
+                return true;
+            else{
+                blocks_area.clear();
+                blocks_area.resize(layer_size, 0);
+                assert(blocks_area[0]==0);
+                return initial_tree_struct_with_useratio_0(userate_max);
+            }
+        }
+    }
+    bool initial_tree_struct_with_useratio_0(vector<double> userate_max)  //在满足利用率的前提下初始化树结构是否成功，不成功的话还需要调整
     //7.29 按照模块01两层面积比例升序进行摆放，优先摆放在0层/1层比例小的在0层，1层同理
     {
-        if(_cfg.strategy % 2 != 0)
-        {
-            return initial_tree_struct_with_useratio_1(userate_max);
-        }
         bool is_debug = false;
         bool is_successful = true;
         //todo 排序后需要更新nets的connected_blocks
-        /*
         if (layer_size == 2)
         {
-            sort(blocks.begin(), blocks.end(), cmp);
+            //sort(blocks.begin(), blocks.end(), cmp);
             if (is_debug)
             {
                 for (int i = 0; i < blocks.size(); i++)
@@ -883,7 +933,6 @@ public:
                 }
             }
         }
-        */
         assert(userate_max.size() == layer_size);
         this->userate_max = userate_max;
         // 按排序放置模块，直到该层利用率满了就顺延，直到所有层放满或模块放完
@@ -905,7 +954,7 @@ public:
                          << ", use_ratio_add_block(cur_layer, cur_block): " << use_ratio_add_block(cur_layer, cur_block) << endl;
                 }
                 //1.1 当前层，能放进去，继续放下一个块
-                if (use_ratio_add_block(cur_layer, cur_block) < userate_max[cur_layer])
+                if (use_ratio_add_block(cur_layer, cur_block) <= userate_max[cur_layer])
                 {
                     InsertInFixedOutlineWidth(cur_block_id, cur_layer);    //8.9号更新，修改为不超过芯片宽度的末尾插入
                     blocks_area[cur_layer] += cur_block.area(cur_layer);
@@ -958,7 +1007,7 @@ public:
                          << ", use_ratio_add_block(cur_layer, cur_block): " << use_ratio_add_block(cur_layer, cur_block) <<endl;
                 }
                 //1.1 当前层，能放进去，循环停止
-                if(use_ratio_add_block(cur_layer, cur_block) < userate_max[cur_layer])
+                if(use_ratio_add_block(cur_layer, cur_block) <= userate_max[cur_layer])
                 {
                     InsertInFixedOutlineWidth(cur_block_id, cur_layer);
                     blocks_area[cur_layer] += cur_block.area(cur_layer);

@@ -15,14 +15,19 @@ public:
     //数据结构
     //vector<Block> blocks_cur, blocks_pre, blocks_best;  //当前操作的模块，保存的上一次的模块（作为恢复的副本），以及最好解的模块
     BStarTree cur_tree, pre_tree, best_tree;    //每个tree内部包括layer_size层，block数量总和等于b_num
+    vector<Block> best_blocks;      //记录最好解的模块位置
     vector<Block> initial_blocks;
+    unordered_set<int> nets_include_blocks;  //所有网表包含的模块数量，便于删除不在网表中的模块
+    vector<Block> unconnect_blocks; //无网相连的模块，单独处理
+    BStarTree unconnect_tree;       //无网相连模块构造的树
+    vector<Block> blocks_copy;      //初始读取模块的拷贝，区分后续删除无网相连模块后的initial_blocks
+    vector<int> blocks_id_old_to_new;   //blocks_copy的旧block_id到initial_blocks的新id的转换，改变后续网表的connected_blocks（如果被删除了则值为-1）
     vector<Net> nets;
     //vector<int> blocks_tree_number;     //blocks_cur[i]所在的树，可以直接存在block中，已用blocks_cur[block_id].layer代替
     int layer_size;    //几层的floorplanning
     unordered_map<string, int> blocks_name_id;   //块的名字到编号（0到b_num-1）的映射
     Config _cfg;
     int b_num;          //总共的block数量
-    unordered_set<int> nets_include_blocks;  //所有网表包含的模块数量，便于删除不在网表中的模块
 
     //约束信息
     COORD_TYPE outline_width = 23000, outline_height = 19000;    //固定轮廓的宽和高，在读取时赋值，在初始化树时存入树中
@@ -65,7 +70,7 @@ public:
     }
     bool solve(string blockpath, string netpath, string output_file)
     {
-        cout<<"initialing..."<<endl;
+        cout<<"floorplan initialing..."<<endl;
         if(!Initialization(blockpath, netpath))
             return false;
         //OutputBlocks(std::cout, best_tree.blocks);
@@ -73,10 +78,11 @@ public:
         cout<< "initial over, time cost: "<< (double)(clock()-start_ms) / CLOCKS_PER_SEC << endl;
 
         cout<<"search running..."<<endl;
-        LocalSearch(best_tree, b_num*300, _cfg.time_limit);
+        LocalSearch(cur_tree, b_num*300, _cfg.time_limit);
         //OutputBlocks(std::cout, best_tree.blocks);
         //OutputTrees(std::cout,best_tree);
         cout<< "search over, time cost: "<< (double)(clock()-start_ms) / CLOCKS_PER_SEC << endl;
+        RecordBestBlocks(best_tree);
 //        AdjustLegalOutline(best_tree, b_num*30, b_num*b_num); 在search更新最优解时已经有了调整轮廓，不用最后再调整一次
 //        cout<< "3 over, time cost: "<< (double)(clock()-start_ms) / CLOCKS_PER_SEC << endl;
 
@@ -200,6 +206,7 @@ public:
                         pre_tree = _tree;
                         cur_search_fails = 0;
                         update_best_time++;
+                        best_tree = _tree;
                     }
                     if(is_debug)
                         cout << "best cost update: " << best_cost << endl;
@@ -512,12 +519,15 @@ public:
         }
         for(int l=0; l<layer_size; l++)
             cout << "layer " << l << ", total_block_area:" << total_block_area[l] <<", layer_bigest_blocks_num: " << layer_bigest_blocks_num[l] << endl;
-        Initial_blocks();
+#ifdef AddDeleteBlocks
+        InitialDeletedBlocks();
+#endif
+        Initial_blocks(initial_blocks);
         if(is_debug)
         {
             cout << "Initial_blocks() is over" << endl;
         }
-        Initial_trees();
+        Initial_trees(cur_tree, initial_blocks, outline_width, outline_height, _cfg.initial_strategy);
         //OutputBlocks(std::cout, blocks_cur);  //pack前，坐标还都是(0,0)
         cur_tree.Pack();
         if(is_debug)
@@ -544,12 +554,14 @@ public:
         }
         //blocks_best = blocks_pre = blocks_cur;  //bug已修正，之前blocks_best未用pack后的blocks_cur赋值
         best_tree = pre_tree = cur_tree;
+        RecordBestBlocks(best_tree);
         if(is_debug)
         {
             cout << "AdjustLegalOutline() is over, time_cost: " <<  double(clock() - start_ms) / CLOCKS_PER_SEC
             <<"s, infomation as follow: " << endl;
             OutputBlocks(std::cout, cur_tree.blocks);  //pack后，坐标在放置的位置上
             OutputTrees(std::cout, cur_tree);
+            exit(0);
         }
 
 
@@ -622,18 +634,88 @@ public:
         initial_time = double(clock() - start_ms) / CLOCKS_PER_SEC;
         return true;
     }
-    void Initial_blocks()
+    void InitialDeletedBlocks()
     {
-        for(int ib=0; ib < b_num; ib++)
+        if(unconnect_blocks.size() == 0)
+            return;
+        bool is_debug = false;
+        if(is_debug)
+            cout << "in InitialDeletedBlocks()" << endl;
+        //1. 根据模块最大层的总面积计算需要轮廓空间大小
+        COORD_TYPE blocks_max_area = 0;
+        for(auto block: unconnect_blocks)
         {
-            initial_blocks[ib].parent = initial_blocks[ib].left = initial_blocks[ib].right = -1;
-            initial_blocks[ib].is_from_left = false;
+            COORD_TYPE max_area = 0;
+            for(int l=0; l<layer_size; l++)
+            {
+                max_area = max(max_area, block.area(l));
+//                if(is_debug)
+//                {
+//                    cout << "block.area of layer " << l << ": " << block.area(l) << endl;
+//                }
+            }
+            blocks_max_area += max_area;
+        }
+        //2. 进行放置，在初始利用率乘1.1进行扩大轮廓。
+        COORD_TYPE  _outline_height = blocks_max_area / 2 / outline_width / userate_max[0] * 1.1;
+        if(is_debug)
+        {
+            cout << "outline_width: " << outline_width << ", _outline_height: " << _outline_height << endl;
+        }
+        while(!InitialBlocksInOutline(unconnect_tree ,unconnect_blocks, outline_width, _outline_height, 1))
+        {
+            _outline_height = _outline_height * 1.1;
+            if(is_debug)
+            {
+                cout << "outline_width: " << outline_width << ", _outline_height: " << _outline_height << endl;
+            }
+        }
+        //3. 放置完毕更新 outline_height 和 userate_max以进行其他模块放置
+        COORD_TYPE max_height = 0;
+        for(int l=0; l<layer_size; l++)
+        {
+            max_height = max(max_height, unconnect_tree.height_[l]);
+        }
+        assert(max_height <= _outline_height);
+        for(int l=0; l<layer_size; l++)
+        {
+            userate_max[l] = (userate_max[l] * outline_height * outline_width - unconnect_tree.blocks_area[l]) / ((outline_height - max_height) * outline_width);
+            if(is_debug)
+            {
+                cout << "unconnect_tree.blocks_area[" << l << "]: " << unconnect_tree.blocks_area[l] << endl;
+                cout << "new  userate_max[" << l << "]: " << userate_max[l] << endl;
+            }
+        }
+        outline_height = outline_height - max_height;
+
+        if(is_debug)
+        {
+            cout << "InitialDeletedBlocks over, last outline_height: " << outline_height << ", blocks and tree info follows: " << endl;
+            OutputTrees(cout, unconnect_tree);
+            //OutputBlocks(cout, unconnect_tree.blocks, false);
+            //exit(0);
+        }
+    }
+    bool InitialBlocksInOutline(BStarTree &tree, vector<Block> &blocks, COORD_TYPE _outline_width, COORD_TYPE _outline_height, int strategy)
+    //是否能将模块初始化到限定的轮廓内，是则返回true，并修改引用tree为初始化后的树
+    {
+        Initial_blocks(blocks);
+        Initial_trees(tree, blocks, _outline_width, _outline_height, strategy);
+        tree.Pack();
+        return AdjustLegalOutline(tree, blocks.size());
+    }
+    void Initial_blocks(vector<Block> &blocks)
+    {
+        for(int ib=0; ib < blocks.size(); ib++)
+        {
+            blocks[ib].parent = blocks[ib].left = blocks[ib].right = -1;
+            blocks[ib].is_from_left = false;
             /*旋转模块复原*/
-            initial_blocks[ib].rotated_angle = 0;
+            blocks[ib].rotated_angle = 0;
         }
         //blocks_best = blocks_pre = blocks_cur;
     }
-    void Initial_trees()
+    void Initial_trees(BStarTree &tree, vector<Block> &blocks, COORD_TYPE _outline_width, COORD_TYPE _outline_height, int strategy)
     {
 //        //每个block随机选择放入哪个树（未实现）
 //        for(int it=0; it<layer_size; it++)
@@ -659,19 +741,19 @@ public:
 //            best_tree.emplace_back(&blocks_best, i, outline_width, outline_height);
 //            pre_tree.emplace_back(&blocks_pre, i, outline_width, outline_height);
 //        }
-        cur_tree = BStarTree(initial_blocks, layer_size, _cfg, outline_width, outline_height);
+        tree = BStarTree(blocks, layer_size, _cfg, _outline_width, _outline_height);
         if(IfUtilizationLimit == true)
         {
 
-            if( !cur_tree.initial_tree_struct_with_useratio(userate_max) )
+            if( !tree.initial_tree_struct_with_useratio(userate_max, strategy) )
             {
                 cerr << "failed in initial_tree_struct_with_useratio()" << endl;
                 exit(3);
             }
 //            OutputTrees(cout,cur_tree);
-            cur_tree.Pack();
+            tree.Pack();
 //            OutputBlocks(cout, cur_tree.blocks);
-            OutputTrees(cout,cur_tree);
+//            OutputTrees(cout,tree);
 //            exit(0);
         }
         else
@@ -919,23 +1001,26 @@ public:
         bool is_debug_delete = false;
         if(is_debug_delete)
             cout << "InNetsBlockNum: " << nets_include_blocks.size() << ", doing DeleteBlocksNotInNets" <<endl;
-        vector<Block> temp_blocks = initial_blocks;
-        vector<int> blocks_id_old_to_new(b_num, -1);   //旧block_id到新id的转换，改变后续网表的connected_blocks
+        blocks_copy = initial_blocks;
+        blocks_id_old_to_new.resize(b_num, -1);   //旧block_id到新id的转换，改变后续网表的connected_blocks
         initial_blocks.clear();
-        for(int i=0; i < temp_blocks.size(); i++)
+        for(int i=0; i < blocks_copy.size(); i++)
         {
             if( nets_include_blocks.count(i) )
             {
                 if(is_debug_delete)
-                    cout << temp_blocks[i].name << " is in nets" << endl;
-                initial_blocks.push_back(temp_blocks[i]);
+                    cout << blocks_copy[i].name << " is in nets" << endl;
+                initial_blocks.push_back(blocks_copy[i]);
                 blocks_id_old_to_new[i] = initial_blocks.size() - 1;
             }
-            else if(is_debug_delete)
-                cout << temp_blocks[i].name << " is not in nets" << endl;
+            else {
+                unconnect_blocks.push_back(blocks_copy[i]);
+                if(is_debug_delete)
+                    cout << blocks_copy[i].name << " is not in nets" << endl;
+            }
         }
         b_num = initial_blocks.size();
-        assert(initial_blocks.size() == nets_include_blocks.size());\
+        assert(initial_blocks.size() == nets_include_blocks.size());
         //2. 更正网表
         for(auto &net: nets)//for(auto net: nets) 这样不行，改变的是临时变量net，需要加引用
         {
@@ -1135,13 +1220,15 @@ public:
             blocks_area += b.area();
         return blocks_area;
     }
-    void OutputBlocks(ostream &out, vector<Block> &b)
+    void OutputBlocks(ostream &out, vector<Block> &b, bool if_cal_wirelength = true)
     {
         if(!out)
         {
             cerr << "OutputBlocks error" << endl;
             return;
         }
+        if(FixedOutline == true)
+            out << outline_width << " " << outline_height <<endl;
         out<<"name,"
             <<"x,"
             <<"y,"
@@ -1156,7 +1243,7 @@ public:
            <<"parent,"
            <<"is_from_left,"
            <<endl;
-        for(int i=0; i<b_num; i++)
+        for(int i=0; i<b.size(); i++)
             out << b[i].name << ","
                 << b[i].x << ","
                 << b[i].y << ","
@@ -1171,7 +1258,8 @@ public:
                 << b[i].parent << ","
                 << b[i].is_from_left << ","
                <<endl;
-        out << "Wirelength: " << TotalWireLength(b) << endl;
+        if(if_cal_wirelength)
+            out << "Wirelength: " << TotalWireLength(b) << endl;
     }
     void OutputTrees(ostream &out, BStarTree &t)
     {
@@ -1181,7 +1269,19 @@ public:
 //    {
 //
 //    }
-    bool AdjustLegalOutline(BStarTree& _tree, int max_adjust_tolerability_iteration, int perturb_times)   //perturb后pack的时候有bug，可能是浅复制的原因，已重构代码
+    void RecordBestBlocks(BStarTree& _tree) //转换树，把删除过的模块加进_tree中
+    {
+        best_blocks = _tree.blocks;
+#ifdef AddDeleteBlocks
+        for(int i=0; i<unconnect_tree.blocks.size(); i++)
+        {
+            Block b = unconnect_tree.blocks[i];
+            b.y += outline_height;
+            best_blocks.push_back(b);
+        }
+#endif
+    }
+    bool AdjustLegalOutline(BStarTree& _tree, int max_adjust_tolerability_iteration, int perturb_times = 0)   //perturb后pack的时候有bug，可能是浅复制的原因，已重构代码
     //调整布图结构，向着超出轮廓面积（代价）更小的解移动，直到 1.成功，代价为0 或 2.失败，连续扰动最大容忍次数也没得到更好解
     {
         bool is_debug = false;
@@ -1387,7 +1487,9 @@ public:
             cout<<"output error in file: "<<output_file<<endl;
             exit(-1);
         }
-        OutputBlocks(fout, best_tree.blocks);
+        //cout << "best_blocks.size(): " << best_blocks.size() << endl;
+        //OutputBlocks(cout, best_blocks);
+        OutputBlocks(fout, best_blocks);
         OutputTrees(fout, best_tree);
         fout <<"random seed: " << _cfg.random_seed << endl;
         fout <<"alpha: " << _cfg.alpha << endl;
@@ -1451,10 +1553,10 @@ public:
             fout << endl;
         }
         fout << _cfg.instance << ","
-            << _cfg.alpha << ","
-            << _cfg.gamma << ","
-                << _cfg.random_seed << ","
-                << _cfg.strategy << ","
+             << _cfg.alpha << ","
+             << _cfg.gamma << ","
+             << _cfg.random_seed << ","
+             << _cfg.initial_strategy << ","
                 << TotalWireLength(best_tree.blocks) << ","
                 << Time() << ","
                 << iter << ","
