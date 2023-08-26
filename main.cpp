@@ -67,7 +67,7 @@ int main()  //(double alpha, string blockpath, string netpath, string output_fil
 //    return 0;
 
     string path = "C:\\Users\\11367\\Desktop\\algorithm\\floorplanning_iccad2023_btree\\Deploy\\Instance\\ICCAD2023_floorplanning_macro_core_shrinknet\\";
-    string instance = "ICCAD2023_floorplanning_case_4(1)";
+    string instance = "ICCAD2023_floorplanning_case4";
     float time_limit = 30;
     for(int random_seed = 0; random_seed <= 0; random_seed++)
     {

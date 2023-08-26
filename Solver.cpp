@@ -488,6 +488,46 @@ public:
 //        for(int it = 0; it < layer_size; it++)
 //            cur_tree[it].Pack();
 //    }
+    void SortBlocks()
+    {
+        bool is_debug = false;
+        unordered_map<int, string> blocks_old_id_name;
+        for(int i=0; i < initial_blocks.size(); i++)
+        {
+            blocks_old_id_name[i] = initial_blocks[i].name;
+        }
+        unordered_map<string, int> blocks_name_new_id;
+        sort(initial_blocks.begin(), initial_blocks.end(), BStarTree::cmp);
+        for(int i=0; i < initial_blocks.size(); i++)
+            blocks_name_new_id[initial_blocks[i].name] = i + 1;
+        unordered_map<int, int> blocks_old_id_new;
+        for(auto old_id_name: blocks_old_id_name)
+        {
+            blocks_old_id_new[old_id_name.first] = blocks_name_new_id[old_id_name.second];
+            if(is_debug)
+                cout << "old id: " << old_id_name.first  << ", old name: " << old_id_name.second
+                << ", new id: " << blocks_name_new_id[old_id_name.second] << ", check name: "  << initial_blocks[blocks_old_id_new[old_id_name.first]-1].name << endl;
+            assert(old_id_name.second == initial_blocks[blocks_old_id_new[old_id_name.first]-1].name);
+        }
+        for(auto&n: nets)
+        {
+            for(int i=0; i<n.connected_blocks.size(); i++){
+                n.connected_blocks[i] = blocks_old_id_new[n.connected_blocks[i]] - 1;
+                if(is_debug)
+                {
+                    cout << "new: initial_blocks[n.connected_blocks[i]].name: " << initial_blocks[n.connected_blocks[i]].name
+                    << ", initial_blocks[n.connected_blocks[i]].pins_num: " << initial_blocks[n.connected_blocks[i]].pins_num
+                    << ", n.connected_pins[i]: " << n.connected_pins[i] << endl;
+                }
+                assert(initial_blocks[n.connected_blocks[i]].pins_num > n.connected_pins[i]);
+            }
+        }
+        if(is_debug)
+        {
+            OutputBlocks(cout, initial_blocks);
+            exit(0);
+        }
+    }
     bool Initialization(string blockpath, string netpath)       //初始化树结构和平均线长平均面积等信息
     {
         bool is_debug = false;
@@ -496,9 +536,21 @@ public:
         //blocks_cur.resize(_cfg.layyer_max, Block()); 为什么我会这么写，感觉有问题
 #ifdef ShrinkNet
         ReadFromShrinkNetFile(blockpath, netpath);
+        //fstream fout("initial_blocks.txt");
+//        cout << "initial_blocks.size(): " << initial_blocks.size() << endl;
+//        OutputBlocks(cout, initial_blocks);
+//        COORD_TYPE sum_area0 = 0, sum_area1 = 0;
+//        for (auto b : initial_blocks)
+//        {
+//            sum_area0 += b.area(0);
+//            sum_area1 += b.area(1);
+//        }
+//        cout << "sum_area0: " << sum_area0 << ", sum_area1: " << sum_area1 << endl;
+//        exit(0);
 #else
         ReadFromFile(blockpath, netpath);
 #endif
+        SortBlocks();
         /*cur_tree.b_num = 6;
         cur_tree.blocks_cur = {Block(1,1),Block(2,2),Block(2,1),Block(1,1),Block(1,1),Block(3,2)};
         Net::nets = {{0,1,3}, {2,4,5}, {0,1,2,3,4,5}};*/
@@ -528,7 +580,9 @@ public:
             cout << "Initial_blocks() is over" << endl;
         }
         Initial_trees(cur_tree, initial_blocks, outline_width, outline_height, _cfg.initial_strategy);
-        //OutputBlocks(std::cout, blocks_cur);  //pack前，坐标还都是(0,0)
+//        OutputBlocks(std::cout, initial_blocks);  //pack前，坐标还都是(0,0)
+//        cout << "blocks_area[0]: " << cur_tree.blocks_area[0] << ", blocks_area[1]: " << cur_tree.blocks_area[1] << endl;
+//        exit(0);
         cur_tree.Pack();
         if(is_debug)
         {
@@ -561,7 +615,7 @@ public:
             <<"s, infomation as follow: " << endl;
             OutputBlocks(std::cout, cur_tree.blocks);  //pack后，坐标在放置的位置上
             OutputTrees(std::cout, cur_tree);
-            exit(0);
+            //exit(0);
         }
 
 
@@ -615,23 +669,26 @@ public:
         initial_average_wirelength = (double)total_wirelength / initial_num_perturbs;
         initial_average_exceed_outline_area = (double)total_exceed_outline_area / (initial_num_perturbs+1);
         initial_best_wirelength = TotalWireLength(best_tree.blocks);
-        cout<<"initial_area: " << initial_area <<endl;
-        cout<<"initial_wirelength: " << initial_wirelength <<endl;
-        cout<<"initial_exceed_outline_area: " << initial_exceed_outline_area <<endl;
-        cout<< "initial_average_area: "<<initial_average_area<<endl;
-        cout << "initial_average_wirelength: " << initial_average_wirelength << endl;
-        cout << "initial_average_exceed_outline_area: " << initial_average_exceed_outline_area <<endl;
-        cout<<"initial best area: "<< TotalArea(best_tree)<<endl;
-        cout<<"initial_best_wirelength: "<<initial_best_wirelength<<endl;
-        cout<<"last perturb area: " << cur_area<<endl;
-        cout<<"last perturb wirelength: " << cur_wirelength<<endl;
-        cout<<"initial_best_cost: "<<initial_best_cost<<endl;
-        cout<<"initial last cost: " << cur_cost << endl;
         pre_tree = cur_tree = best_tree;
         best_cost = cost_pre = Cost(cur_tree);
-        cout<<"now best_cost: " << best_cost <<endl;
-        cout<<endl;
         initial_time = double(clock() - start_ms) / CLOCKS_PER_SEC;
+        if(is_debug)
+        {
+            cout<<"initial_area: " << initial_area <<endl;
+            cout<<"initial_wirelength: " << initial_wirelength <<endl;
+            cout<<"initial_exceed_outline_area: " << initial_exceed_outline_area <<endl;
+            cout<< "initial_average_area: "<<initial_average_area<<endl;
+            cout << "initial_average_wirelength: " << initial_average_wirelength << endl;
+            cout << "initial_average_exceed_outline_area: " << initial_average_exceed_outline_area <<endl;
+            cout<<"initial best area: "<< TotalArea(best_tree)<<endl;
+            cout<<"initial_best_wirelength: "<<initial_best_wirelength<<endl;
+            cout<<"last perturb area: " << cur_area<<endl;
+            cout<<"last perturb wirelength: " << cur_wirelength<<endl;
+            cout<<"initial_best_cost: "<<initial_best_cost<<endl;
+            cout<<"initial last cost: " << cur_cost << endl;
+            cout<<"now best_cost: " << best_cost <<endl;
+            cout<<endl;
+        }
         return true;
     }
     void InitialDeletedBlocks()
@@ -824,7 +881,6 @@ public:
         }
         return s!="";
     }
-    //todo 改为从结构体中传数据，数据需要读入initial_blocks和nets中
     void ReadFromShrinkNetFile(string blockpath, string netpath)
     {
         bool is_debug = false;
@@ -1470,17 +1526,16 @@ public:
     {
         return (double)(end_ms - start_ms)/CLOCKS_PER_SEC;
     }
-    //todo 数据改为输出到结构体中，主要是函数OutputBlocks中的部分有用信息
     void Output(string output_file)
     {
-        cout << endl << _cfg.instance <<" instance completed" << endl;
+        cout << "Floorplan completed" << endl;
         cout<<"random seed: " << _cfg.random_seed << endl;
         cout <<"best wirelength: " << TotalWireLength(best_tree.blocks) << endl;
         //fout<<"dead_sapce_rate: "<<dead_sapce_rate<<endl;
-        cout<<"initial_num_perturbs: "<<initial_num_perturbs<<endl;
-        cout<<"iter: "<<iter<<endl<<"best_iter: "<<best_iter<<endl<<"best_cost: "<<best_cost<<endl\
-            <<"reject_time: "<<reject_time<<endl<<"accept_inferior_time: "<<accept_inferior_time<<endl\
-            <<"update_best_time: "<<update_best_time<<endl<<"time cost: "<<Time()<<endl<<endl;
+//        cout<<"initial_num_perturbs: "<<initial_num_perturbs<<endl;
+//        cout<<"iter: "<<iter<<endl<<"best_iter: "<<best_iter<<endl<<"best_cost: "<<best_cost<<endl
+//            <<"reject_time: "<<reject_time<<endl<<"accept_inferior_time: "<<accept_inferior_time<<endl
+//            <<"update_best_time: "<<update_best_time<<endl<<"time cost: "<<Time()<<endl<<endl;
         ofstream fout(output_file);
         if(!fout)
         {

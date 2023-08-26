@@ -26,8 +26,8 @@ public:
     //Contour contour;    //每个块都维护一个到目前块的等高线，代价会太大，未实现
 
     int pins_num;   //该模块的引脚数，各层引脚数一样， pins_num = pins_coor[i].size()
-    vector<vector<pair<COORD_TYPE,COORD_TYPE>>> pins_coor;    //pins_coor[i][j]表示第i层引脚j的相对坐标（相对模块坐标），编号 j 从 0 到 pins_num-1
-    COORD_TYPE exceed_outline_area;
+    vector<vector<pair<COORD_TYPE, COORD_TYPE>>> pins_coor;    //pins_coor[i][j]表示第i层引脚j的相对坐标（相对模块坐标），编号 j 从 0 到 pins_num-1
+    COORD_TYPE exceed_outline_area = 0;
 
     Block(int layersize = 1, string s = "null", bool is_macro = true, int shape_num = 1)
     {

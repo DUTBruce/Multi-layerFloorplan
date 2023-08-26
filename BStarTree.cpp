@@ -510,6 +510,7 @@ public:
         }
         if (is_debug)
             cout << endl;
+        //cout << "layer: " << layer << ", pack_num: " << pack_num[layer] << ", tree_b_num: " << tree_b_num[layer] << endl;
         assert(pack_num[layer] == tree_b_num[layer]);
     }
     void Pack(int layer, int block_id)    //根据树结构放置模块，无参数时默认从根节点开始
@@ -898,9 +899,6 @@ public:
                 return true;
             else
             {
-                blocks_area.clear();
-                blocks_area.resize(layer_size, 0);
-                assert(blocks_area[0]==0);
                 return initial_tree_struct_with_useratio_1(userate_max);
             }
         }
@@ -909,9 +907,7 @@ public:
             if( initial_tree_struct_with_useratio_1(userate_max))
                 return true;
             else{
-                blocks_area.clear();
-                blocks_area.resize(layer_size, 0);
-                assert(blocks_area[0]==0);
+                //cout << "initial_tree_struct_with_useratio_1() failed" << endl;
                 return initial_tree_struct_with_useratio_0(userate_max);
             }
         }
@@ -919,20 +915,26 @@ public:
     bool initial_tree_struct_with_useratio_0(vector<double> userate_max)  //在满足利用率的前提下初始化树结构是否成功，不成功的话还需要调整
     //7.29 按照模块01两层面积比例升序进行摆放，优先摆放在0层/1层比例小的在0层，1层同理
     {
+        tree_b_num.clear();
+        tree_b_num.resize(layer_size, 0);
+        root.clear();
+        root.resize(layer_size, -1);
+        blocks_area.clear();
+        blocks_area.resize(layer_size, 0);
         bool is_debug = false;
         bool is_successful = true;
-        //todo 排序后需要更新nets的connected_blocks
-        if (layer_size == 2)
-        {
-            //sort(blocks.begin(), blocks.end(), cmp);
-            if (is_debug)
-            {
-                for (int i = 0; i < blocks.size(); i++)
-                {
-                    cout << blocks[i].name << ", area(0)/area(1): " << (double)blocks[i].area(0) / blocks[i].area(1) << endl;
-                }
-            }
-        }
+        //排序后需要更新nets的connected_blocks：已排序
+//        if (layer_size == 2)
+//        {
+//            //sort(blocks.begin(), blocks.end(), cmp);，已在Solver的Initialization中SortBlocks了
+//            if (is_debug)
+//            {
+//                for (int i = 0; i < blocks.size(); i++)
+//                {
+//                    cout << blocks[i].name << ", area(0)/area(1): " << (double)blocks[i].area(0) / blocks[i].area(1) << endl;
+//                }
+//            }
+//        }
         assert(userate_max.size() == layer_size);
         this->userate_max = userate_max;
         // 按排序放置模块，直到该层利用率满了就顺延，直到所有层放满或模块放完
@@ -982,6 +984,12 @@ public:
       8.9InsertRoot替换为InsertInFixedOutlineWidth*/
     bool initial_tree_struct_with_useratio_1(vector<double> userate_max)  //在满足利用率的前提下初始化树结构是否成功，不成功的话还需要调整
     {
+        tree_b_num.clear();
+        tree_b_num.resize(layer_size, 0);
+        root.clear();
+        root.resize(layer_size, -1);
+        blocks_area.clear();
+        blocks_area.resize(layer_size, 0);
         bool is_debug = false;
         bool is_successful = true;
         assert(userate_max.size() == layer_size);
